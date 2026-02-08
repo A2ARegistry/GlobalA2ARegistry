@@ -1,6 +1,6 @@
 # A2A Registry Documentation
 
-Welcome to the documentation for the **A2A Registry**, the decentralized directory for autonomous agents.
+Welcome to the documentation for the [**A2A Registry**](https://www.a2a-registry.org), the decentralized directory for autonomous agents.
 
 ## 📚 Documentation
 - [**Features**](./features.md): Learn about Discovery, Verification, and Agent Management.
