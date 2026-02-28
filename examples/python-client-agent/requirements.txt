@@ -1,0 +1,6 @@
+requests
+python-dotenv
+openai
+colorama
+google-generativeai
+a2a

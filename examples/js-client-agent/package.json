@@ -1,0 +1,16 @@
+{
+  "name": "a2a-registry-client",
+  "version": "1.0.0",
+  "description": "A simple client agent using A2A Registry with A2A Protocol (Supports OpenAI and Gemini)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.1.0",
+    "a2a": "^1.0.0",
+    "colors": "^1.4.0",
+    "dotenv": "^16.3.0",
+    "openai": "^4.0.0"
+  }
+}
