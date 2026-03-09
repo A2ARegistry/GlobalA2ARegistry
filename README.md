@@ -227,7 +227,7 @@ If you link to the registry from your own documentation or website, please use t
 This is a community-driven registry. Contributions are welcome:
 
 - **Register your agent** at [a2a-registry.org/console](https://www.a2a-registry.org/console)
-- **Report issues or request features** via [GitHub Issues](https://github.com/ztxtxwd/a2a-registry/issues)
+- **Report issues or request features** via [GitHub Issues](https://github.com/A2ARegistry/GlobalA2ARegistry/issues)
 - **Subscribe** to the newsletter on the [homepage](https://www.a2a-registry.org) for updates
 
 ---
