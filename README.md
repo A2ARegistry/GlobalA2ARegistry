@@ -55,8 +55,8 @@ The [Playground](https://www.a2a-registry.org/playground) lets users **test agen
 - Supports **BYOK (Bring Your Own Key)** for OpenAI, Gemini, or use the built-in registry AI.
 - The playground backend uses **Cloudflare Durable Objects** for stateful session management.
 
-### 🤖 8. The Mega Agent — Registry as a Single Contact Point
-See the **[dedicated section below](#-the-registry-mega-agent--your-single-contact-point)** for full details. In short: the Registry exposes itself as an A2A-protocol-compliant agent so other agents can call it directly to discover, select, and chain to any registered agent — **without hardcoding any endpoints in your business logic**.
+### 🤖 8. The Meta Agent — Registry as a Single Contact Point
+See the **[dedicated section below](#-the-registry-meta-agent--your-single-contact-point)** for full details. In short: the Registry exposes itself as an A2A-protocol-compliant agent so other agents can call it directly to discover, select, and chain to any registered agent — **without hardcoding any endpoints in your business logic**.
 
 ### 📰 9. Industry Insights
 The landing page surfaces **curated A2A ecosystem news and best practices**, powered by the Content Growth API. Stay informed on A2A trends, new protocol developments, and community announcements without leaving the portal.
@@ -66,7 +66,7 @@ A built-in **newsletter subscription** and **feedback widget** on the landing pa
 
 ---
 
-## 🤖 The Registry Mega Agent — Your Single Contact Point
+## 🤖 The Registry Meta Agent — Your Single Contact Point
 
 > **The A2A Registry is itself a fully A2A-compliant agent.** Instead of discovering agents manually, browsing a directory, and hardcoding endpoints, you can point your AI system at a single URL — the Registry Agent — and let it handle everything automatically.
 
@@ -125,7 +125,7 @@ elif task == "summarize":
 ...
 ```
 
-**New approach** with the Registry Mega Agent (zero hardcoding):
+**New approach** with the Registry Meta Agent (zero hardcoding):
 ```
 # Your agent always starts at ONE place
 call registry_agent.search_agents(query="I need to translate text")
@@ -222,6 +222,102 @@ If you link to the registry from your own documentation or website, please use t
 
 ---
 
+## 💝 Sponsors
+
+The A2A Registry is free, open infrastructure for the agentic web. Running and maintaining this service requires resources. We're grateful to our sponsors who help keep the registry running for everyone.
+
+<table align="center">
+  <!-- Row 1 -->
+  <tr>
+    <td align="center" width="300" style="vertical-align: top;">
+      <a href="https://www.zoomphant.com" target="_blank" style="display: flex; align-items: center; justify-content: center; gap: 12px; text-decoration: none;">
+        <img src="https://www.zoomphant.com/logo.svg" alt="ZoomPhant" width="64" height="64" style="object-fit: contain; flex-shrink: 0;">
+        <strong style="color: inherit;">ZoomPhant</strong>
+      </a>
+      <div style="margin-top: 8px;">
+        <sub>Next-gen self-hosted monitoring platform. Perfect for teams monitoring AI agent infrastructure.</sub>
+      </div>
+    </td>
+    <td align="center" width="300" style="vertical-align: top;">
+      <a href="mailto:sponsors@a2a-registry.org" style="display: flex; align-items: center; justify-content: center; gap: 12px; text-decoration: none;">
+        <img src="https://www.a2a-registry.org/logo.svg" alt="Become a Sponsor" width="64" height="64" style="opacity: 0.3; object-fit: contain; flex-shrink: 0;">
+        <strong style="color: inherit;">Your Company</strong>
+      </a>
+      <div style="margin-top: 8px;">
+        <sub>Support the A2A ecosystem and reach AI developers worldwide.</sub>
+      </div>
+    </td>
+    <td align="center" width="300" style="vertical-align: top;">
+      <a href="mailto:sponsors@a2a-registry.org" style="display: flex; align-items: center; justify-content: center; gap: 12px; text-decoration: none;">
+        <img src="https://www.a2a-registry.org/logo.svg" alt="Become a Sponsor" width="64" height="64" style="opacity: 0.3; object-fit: contain; flex-shrink: 0;">
+        <strong style="color: inherit;">Your Company</strong>
+      </a>
+      <div style="margin-top: 8px;">
+        <sub>Support the A2A ecosystem and reach AI developers worldwide.</sub>
+      </div>
+    </td>
+  </tr>
+  <!-- Spacing between rows -->
+  <!--
+  <tr><td colspan="3" style="height: 40px;"></td></tr>
+  -->
+  <!-- Row 2 -->
+  <!--
+  <tr>
+    <td align="center" width="300" style="vertical-align: top;">
+      <a href="mailto:sponsors@a2a-registry.org" style="display: flex; align-items: center; justify-content: center; gap: 12px; text-decoration: none;">
+        <img src="https://www.a2a-registry.org/logo.svg" alt="Become a Sponsor" width="64" height="64" style="opacity: 0.3; object-fit: contain; flex-shrink: 0;">
+        <strong style="color: inherit;">Your Company</strong>
+      </a>
+      <div style="margin-top: 8px;">
+        <sub>Support the A2A ecosystem and reach AI developers worldwide.</sub>
+      </div>
+    </td>
+    <td align="center" width="300" style="vertical-align: top;">
+      <a href="mailto:sponsors@a2a-registry.org" style="display: flex; align-items: center; justify-content: center; gap: 12px; text-decoration: none;">
+        <img src="https://www.a2a-registry.org/logo.svg" alt="Become a Sponsor" width="64" height="64" style="opacity: 0.3; object-fit: contain; flex-shrink: 0;">
+        <strong style="color: inherit;">Your Company</strong>
+      </a>
+      <div style="margin-top: 8px;">
+        <sub>Support the A2A ecosystem and reach AI developers worldwide.</sub>
+      </div>
+    </td>
+    <td align="center" width="300" style="vertical-align: top;">
+      <a href="mailto:sponsors@a2a-registry.org" style="display: flex; align-items: center; justify-content: center; gap: 12px; text-decoration: none;">
+        <img src="https://www.a2a-registry.org/logo.svg" alt="Become a Sponsor" width="64" height="64" style="opacity: 0.3; object-fit: contain; flex-shrink: 0;">
+        <strong style="color: inherit;">Your Company</strong>
+      </a>
+      <div style="margin-top: 8px;">
+        <sub>Support the A2A ecosystem and reach AI developers worldwide.</sub>
+      </div>
+    </td>
+  </tr>
+  -->
+</table>
+
+---
+
+### 🤝 Become a Sponsor
+
+Your sponsorship helps us:
+- 🖥️ **Maintain infrastructure** — hosting, edge compute, and database costs
+- 🔒 **Improve security** — regular audits and updates
+- 🚀 **Build new features** — advancing the A2A ecosystem
+- 📚 **Create documentation** — guides, tutorials, and examples
+
+<p align="center">
+  <a href="https://buymeacoffee.com/a2aregistry" target="_blank">
+    <img src="./assets/buymecoffee.png" alt="Buy Me A Coffee - Scan QR Code" width="300" />
+  </a>
+</p>
+
+<p align="center">
+  <em>Support us with a one-time donation</em> ☕ <sub>(Scan QR code or click above)</sub><br/>
+  For <strong>recurring sponsorship or corporate partnerships</strong>, contact <strong>sponsors@a2a-registry.org</strong>
+</p>
+
+---
+
 ## 🤝 Contributing
 
 This is a community-driven registry. Contributions are welcome:
@@ -229,6 +325,7 @@ This is a community-driven registry. Contributions are welcome:
 - **Register your agent** at [a2a-registry.org/console](https://www.a2a-registry.org/console)
 - **Report issues or request features** via [GitHub Issues](https://github.com/A2ARegistry/GlobalA2ARegistry/issues)
 - **Subscribe** to the newsletter on the [homepage](https://www.a2a-registry.org) for updates
+- **Support the infrastructure** — see our [Sponsors section](#-sponsors) above
 
 ---
 
