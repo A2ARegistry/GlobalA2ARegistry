@@ -16,7 +16,7 @@ As the Agentic Web and the **Linux Foundation Agent-to-Agent (A2A) Protocol v1.0
 This document defines a unified **Developer Tools Suite** for the A2A Registry:
 - **A2A Agent Card Builder & Publisher**: An interactive, dual-pane editor (Form + CodeMirror 6) with instant v1.0 JSON generation, templates, OpenAPI/MCP converters, deployment snippets, and team cloud drafts.
 - **A2A Manifest Inspector & Validator**: A multi-tiered linter and live network prober providing actionable diagnostic reports, v0.3→v1.0 migration advice, cryptographic JWS signature validation, and compliance scoring.
-- **`@a2a-registry/validate` CLI**: A standalone, zero-dependency npm package for CI/CD pipelines.
+- **`@a2a-registry/validate` CLI**: A self-contained npm package for CI/CD pipelines (bundles all dependencies; no peer installs required).
 
 ---
 
@@ -75,12 +75,12 @@ The suite strictly adheres to the official Linux Foundation A2A v1.0 specificati
 | **`description`** | **Required** | Detailed summary of agent purpose and routing intent (string). |
 | **`version`** | **Required** | Semantic version string (e.g. `1.0.0`). |
 | **`supportedInterfaces`** | **Required** | Array of `AgentInterface` objects (ordered; 1st = preferred). |
-| **`capabilities`** | **Required** | Object declaring features. Valid boolean fields per v1.0 spec: `streaming`, `pushNotifications`, `extendedAgentCard`. Also accepts an `extensions` array of `AgentExtension` objects. No other fields (e.g. `stateTransitionHistory`) exist in the canonical schema. |
+| **`capabilities`** | **Required** | Object declaring features. Valid boolean fields per v1.0 spec: `streaming`, `pushNotifications`, `extendedAgentCard`. Also accepts an `extensions` array of `AgentExtension` objects (`{ uri: string, description?: string, required?: boolean, params?: object }`). |
 | **`defaultInputModes`** | **Required** | Array of MIME/modality types (`text`, `application/json`, `audio`, etc.). |
 | **`defaultOutputModes`** | **Required** | Array of MIME/modality types (`text`, `application/json`, etc.). |
-| **`skills`** | **Required** | Array of `AgentSkill` objects. Each skill **must** include `id`, `name`, `description`, and `tags` (array). |
+| **`skills`** | **Required** | Array of `AgentSkill` objects. Each skill **must** include `id`, `name`, `description`, and `tags` (required string array). Optional fields: `examples` (array of strings), `inputModes`, `outputModes` (per-skill MIME overrides), and `securityRequirements`. Note: `inputSchema`/`outputSchema` are **not** part of the v1.0 spec; structured input shape is conveyed via `inputModes: ["application/json"]` combined with `description` and `examples`. |
 | **`provider`** | Optional | `AgentProvider` object with required sub-fields `organization` (string) and `url` (string). Displayed by registries and orchestrators as a trust signal. |
-| **`securitySchemes`** | Optional | `map<string, SecurityScheme>` declaring named auth schemes (`apiKey`, `bearer`, `oauth2`, `openIdConnect`, `mutualTls`). Required if any skill or the card itself declares `securityRequirements`. |
+| **`securitySchemes`** | Optional | `map<string, SecurityScheme>` declaring named auth schemes (`apiKey`, `http` [bearer], `oauth2`, `openIdConnect`, `mutualTls`). Required if any skill or the card itself declares `securityRequirements`. |
 | **`securityRequirements`** | Optional | `array of SecurityRequirement` referencing schemes from `securitySchemes`. Declares that callers must authenticate before any task interaction. |
 | **`signatures`** | Optional | Array of `AgentCardSignature` objects (JWS RFC 7515 + JCS RFC 8785). |
 | **`iconUrl`** / **`documentationUrl`** | Optional | Metadata URLs for rich directory rendering. |
@@ -89,6 +89,10 @@ The suite strictly adheres to the official Linux Foundation A2A v1.0 specificati
 ### 4.2 `supportedInterfaces` Multi-Protocol Architecture
 
 The v1.0 specification replaces legacy single `url`/`preferredTransport` fields with an ordered interface array. The first interface is treated as the agent's preferred transport:
+
+* **Standard Bindings**: Supported standard binding identifiers include `JSONRPC` (HTTP + JSON-RPC 2.0), `GRPC` (HTTP/2 + Protocol Buffers), and `HTTP+JSON` (REST-style).
+* **Custom Protocol Binding URIs**: Custom transport bindings (e.g. WebSocket, SSE, experimental RPCs) **MUST be a URI** (e.g. `https://a2a-protocol.org/bindings/websocket` or custom URI). The builder provides autocomplete for standard names and well-known URIs.
+* **Tenant Routing**: An optional `tenant` string allows multi-tenant routing, which the caller echoes back in requests.
 
 ```json
 {
@@ -108,6 +112,11 @@ The v1.0 specification replaces legacy single `url`/`preferredTransport` fields 
       "url": "https://agent.example.com/api/v1",
       "protocolBinding": "HTTP+JSON",
       "protocolVersion": "1.0"
+    },
+    {
+      "url": "wss://agent.example.com/a2a/ws",
+      "protocolBinding": "https://a2a-protocol.org/bindings/websocket",
+      "protocolVersion": "1.0"
     }
   ]
 }
@@ -117,12 +126,21 @@ The v1.0 specification replaces legacy single `url`/`preferredTransport` fields 
 
 To protect against Man-in-the-Middle (MitM) attacks and unauthorized card tampering, v1.0 specifies `signatures`:
 * **Canonicalization**: Pre-signature payload canonicalized using **JCS (RFC 8785)**.
-* **Signature Encoding**: Signed using **JWS (RFC 7515)**.
+* **Signature Encoding**: Signed using **JWS (RFC 7515)**. Protected header references public key via `jku` (JWKS URL) or inline `jwk`.
 * **Verification**: Validator verifies the JWS signature header and public key against the agent's identity.
 
-### 4.4 Maximum Payload Size Constraint
+### 4.4 Registry Best Practices & Recommended Extensions
 
-Per Linux Foundation and Google Cloud Agent Registry standards, `agent-card.json` payload size is strictly capped at **10KB**. Both the Builder and D1 backend enforce this limit.
+To bridge the core specification with global registry indexing, search optimization, and multi-tenant hosting, the suite recognizes several **Registry Recommended Best Practices**:
+
+| Extension / Best Practice | Scope | Purpose & Benefit |
+| :--- | :--- | :--- |
+| **`package_name`** | *Registry Extension* | Reverse-DNS format (`org.domain.agent`) to establish unambiguous global namespace uniqueness across directory catalogs. |
+| **`tenant` in `AgentInterface`** | *Implementation Extension* | Optional string for multi-tenant backend routing. Callers echo this identifier in headers/requests to target specific customer instances. |
+| **`params` in `AgentExtension`** | *Extension Configuration* | Optional object holding extension-specific configuration (e.g. AP2 payment schemas, A2UI rendering configs). |
+| **Prompt Variety (3–5 Examples)** | *Discovery Best Practice* | Providing diverse, natural-language query examples per skill substantially improves semantic vector retrieval hit rates during multi-agent discovery. |
+| **DNS TXT (`_a2a.<domain>`) / ANS** | *Trust Best Practice* | Fast-track domain ownership verification that awards verified trust badges in the registry. |
+| **10KB Payload Cap** | *Registry Guardrail* | Enforced limit on draft saves and submissions to guarantee sub-millisecond edge indexing and lightweight payload delivery. |
 
 ---
 
@@ -139,7 +157,7 @@ To guarantee that LLM-generated output complies with v1.0 rather than hallucinat
 2. **AI Skill & Prompt Enrichment**:
    * For any skill (e.g. `query_balance`), AI synthesizes 3–5 diverse, natural prompt examples (e.g. *"What's my remaining balance on card ending in 4122?"*, *"How much do I have left in checking?"*) to maximize vector discovery hit rates.
 3. **OpenAPI / Code Doc Synthesizer**:
-   * Ingests raw API code or unformatted documentation and extracts structured A2A `skills` with parameter schemas.
+   * Ingests raw API code or unformatted documentation and extracts structured A2A `skills` with appropriate `inputModes`, `tags`, and `examples`.
 
 ### 5.3 AI Capabilities in the Validator
 1. **AI Semantic Linting & Prompt Quality Audit**:
@@ -155,15 +173,20 @@ To guarantee that LLM-generated output complies with v1.0 rather than hallucinat
 
 #### A. Multi-Mode Authoring & CodeMirror 6 Editor
 1. **Visual Form Mode (Guided):**
-   * **Identity & Metadata**: Name, Description, SemVer Version, Icon URL, Documentation URL, Provider (Organization name + URL), Reverse-DNS Package Name (*Registry Extension*).
-   * **Interfaces & Transports (`supportedInterfaces`)**: Multi-row list editor for declaring endpoints with Protocol Binding (`JSONRPC`, `GRPC`, `HTTP+JSON`), Protocol Version (`1.0`), URL (`https://...` for HTTP-based bindings or `hostname:port` for gRPC — no `https://` scheme prefix for gRPC), and optional `tenant` ID. Drag to reorder preference.
-   * **Capabilities**: Boolean switches for `streaming`, `pushNotifications`, and `extendedAgentCard` (the only three boolean capability fields defined in the v1.0 spec). Custom extension URIs can be added via the `extensions` array sub-editor.
+   * **Identity & Metadata**: Name, Description, SemVer Version, Icon URL, Docs URL, Provider (Organization name + URL), Reverse-DNS Package Name (*Registry Extension*).
+   * **Interfaces & Transports (`supportedInterfaces`)**: Multi-row list editor for declaring endpoints. Fields:
+     - `protocolBinding`: Select standard binding (`JSONRPC`, `GRPC`, `HTTP+JSON`) or enter a custom URI (with autocomplete for `https://a2a-protocol.org/bindings/...`).
+     - `protocolVersion`: Protocol binding version (e.g. `1.0`).
+     - `url`: `https://...` for HTTP/JSON-RPC/WebSocket or `hostname:port` for gRPC (no `https://` prefix for gRPC).
+     - `tenant`: Optional multi-tenant routing identifier.
+     - Reordering: Drag handle to set preferred interface order (1st entry = preferred).
+   * **Capabilities**: Boolean switches for `streaming`, `pushNotifications`, and `extendedAgentCard`. Sub-editor for `extensions[]` array (`AgentExtension` objects with `uri: string`, `description?: string`, `required?: boolean`, and `params?: object`).
    * **I/O Modalities**: Required multi-select for `defaultInputModes` and `defaultOutputModes` (`text`, `application/json`, `audio`, `image`, `video`).
-   * **Skills & Tools Editor**: Add/edit nested skills with ID, Name, Description, **Tags (required array)**, Input Parameters Schema, Example Prompts, and optional per-skill `securityRequirements` (advanced section).
-   * **Security Schemes & Requirements**: Named `securitySchemes` map editor (`apiKey`, `bearer`, `oauth2`, `openIdConnect`, `mutualTls`) and card-level `securityRequirements` array referencing declared scheme names. Validator warns if a scheme is referenced in requirements but not declared here.
+   * **Skills & Tools Editor**: Add/edit nested skills with `id`, `name`, `description`, **`tags` (required string array)**, per-skill `inputModes`/`outputModes` (MIME type overrides), Example Prompts (`examples`), and optional per-skill `securityRequirements`. Note: `inputSchema`/`outputSchema` are not v1.0 spec fields — structured input shape is conveyed via `inputModes: ["application/json"]` and rich `examples` / `description`.
+   * **Security Schemes & Requirements**: Named `securitySchemes` map editor (`apiKey`, `http` [bearer], `oauth2`, `openIdConnect`, `mutualTls`) and card-level `securityRequirements` array referencing declared scheme names. Validator warns if a scheme is referenced in requirements but not declared here.
    * **Signatures**: JWS signature attachment section (see Section 4.3 and Phase 2 notes for scope).
 2. **Code Mode with CodeMirror 6**:
-   * Use the official `@codemirror/view`, `@codemirror/state`, `@codemirror/lang-json`, and `@codemirror/lint` packages directly with a thin React `useEffect`/`useRef` integration — avoid third-party wrappers (e.g. `@uiw/react-codemirror`) to prevent coupling to non-official release cycles.
+   * Use the official `@codemirror/view`, `@codemirror/state`, `@codemirror/lang-json`, and `@codemirror/lint` packages directly with a thin React `useEffect`/`useRef` integration — avoid third-party wrappers to prevent coupling to non-official release cycles.
    * **Bi-directional Live Sync with Error Boundary**:
      * *Form → Code*: Real-time serialization (`JSON.stringify(formData, null, 2)`).
      * *Code → Form*: Debounced parsing (300ms). If JSON syntax is invalid mid-typing, the editor displays an inline syntax banner while preserving form state.
@@ -176,9 +199,9 @@ To guarantee that LLM-generated output complies with v1.0 rather than hallucinat
 #### B. Converters & Importers
 * **OpenAPI 3.0/3.1 Importer**:
   * Ingests OpenAPI JSON/YAML via paste or SSRF-protected URL fetch.
-  * Employs a JSON Schema dereferencer (`$ref` resolution) to convert OpenAPI `paths` into A2A `skills[]` with input schemas.
+  * Employs a JSON Schema dereferencer (`$ref` resolution) to convert OpenAPI `paths` into A2A `skills[]`. Operation request bodies are summarised into skill `description` and `examples`; the MIME types of request/response bodies are mapped to `inputModes`/`outputModes`.
 * **Anthropic MCP Config Importer**:
-  * Ingests `claude_desktop_config.json` or MCP manifests, mapping tool definitions directly to A2A skill structures.
+  * Ingests `claude_desktop_config.json` or MCP manifests, mapping tool definitions directly to A2A skill structures (names, descriptions, tags, and `inputModes`).
 
 #### C. Deployment Helper & Snippet Generator
 Copy-paste integration code across major runtimes:
@@ -191,7 +214,7 @@ Copy-paste integration code across major runtimes:
 
 #### D. Collaborative Console Drafts
 * **Cloud Drafts in D1**: Save up to 20 drafts per user (50 per organization) with 10KB size enforcement.
-* **Team Sharing (`is_shared`)**: Toggle drafts between private and organization-wide visibility.
+* **Team Sharing (`is_shared`)**: Toggle drafts between private (`0`) and organization-wide (`1`) visibility.
 * **Semantic Version Diffing**: Powered by `jsondiffpatch` for visual field-by-field changelogs.
 * **Claimed Agent Sync**: 1-click loading from owned registry agents to stage live updates.
 
@@ -218,8 +241,8 @@ Readiness Score Calculation Formula:
 1. **Tier 1: Syntax & Structural Schema Validation (Ajv Engine)**
    * Valid JSON formatting and max 10KB payload check.
    * Conformance to official A2A v1.0 JSON Schema (Draft 2020-12).
-   * Verifies required fields: `name`, `description`, `version`, `supportedInterfaces` (array), `capabilities`, `defaultInputModes`, `defaultOutputModes`, `skills` (with required `tags`).
-   * **Interface URL format enforcement**: For interfaces with `protocolBinding: "GRPC"`, validates the URL as `hostname:port` (no `https://` scheme prefix). For `JSONRPC` and `HTTP+JSON`, validates as an absolute HTTPS URL. A gRPC URL lacking a port or containing an `https://` scheme is flagged as a Tier 1 error.
+   * Verifies required fields: `name`, `description`, `version`, `supportedInterfaces` (array), `capabilities`, `defaultInputModes`, `defaultOutputModes`, `skills` (with required `tags` array).
+   * **Interface URL & Binding Validation**: Validates `protocolBinding` as a standard name (`JSONRPC`, `GRPC`, `HTTP+JSON`) or a valid URI. For interfaces with `protocolBinding: "GRPC"`, validates the URL as `hostname:port` (no `https://` scheme prefix). For HTTP-based bindings, validates as an absolute HTTPS URL.
    * **v0.3 vs v1.0 Format Detector**: Checks all four categories of v0.3→v1.0 breaking changes and surfaces targeted migration hints:
      - *Structural*: Legacy flat `url` or `preferredTransport` top-level fields → *"Detected v0.3 card — migrate to `supportedInterfaces[]`"*.
      - *Enum values*: `role: "user"` / `"agent"` (should be `"ROLE_USER"` / `"ROLE_AGENT"`); `state: "completed"` style kebab/lowercase values (should be `TASK_STATE_*` SCREAMING_SNAKE_CASE).
@@ -229,7 +252,7 @@ Readiness Score Calculation Formula:
 2. **Tier 2: Network, Security & Hosting Protocol (Live URL Mode)**
    * **HTTP Status**: Returns `200 OK`.
    * **HTTPS Enforcement**: Production endpoints must use valid TLS/SSL certificates.
-   * **MIME Content-Type**: Must return `application/json` or `application/problem+json`.
+   * **MIME Content-Type**: Must return `application/a2a+json` (canonical v1.0) or `application/json` (accepted with advisory warning). `text/plain` and `text/html` are flagged as Tier 2 errors.
    * **CORS Compliance**: Response header inspection for `Access-Control-Allow-Origin: *`.
    * **Latency & Size**: Response time < 1500ms; payload < 10KB.
 
@@ -241,7 +264,7 @@ Readiness Score Calculation Formula:
    * **Security Scheme Consistency**: Warns if any `securityRequirements` entry (card-level or per-skill) references a scheme name not defined in `securitySchemes`, or if `securityRequirements` is present but `securitySchemes` is empty/absent.
 
 4. **Tier 4: Cryptographic Trust & Verification**
-   * **JWS Signature Verification**: Validates `signatures[]` against JWS (RFC 7515) and JCS (RFC 8785) standards.
+   * **JWS Signature Verification**: Validates `signatures[]` against JWS (RFC 7515) and JCS (RFC 8785) standards (supporting public keys resolved via `jku` JWKS URL or inline `jwk`).
    * **DNS TXT Ownership**: Verifies `_a2a.<domain>` DNS record match.
    * **GoDaddy ANS Handle**: Resolves and matches `a2a://` handles to origin servers.
 
@@ -351,6 +374,26 @@ CREATE TABLE IF NOT EXISTS `agent_card_versions` (
 
 CREATE INDEX IF NOT EXISTS `idx_versions_draft` ON `agent_card_versions` (`draft_id`, `created_at` DESC);
 CREATE INDEX IF NOT EXISTS `idx_versions_agent` ON `agent_card_versions` (`agent_id`, `created_at` DESC);
+
+-- Quota enforcement triggers (atomic; no application-level race condition possible)
+-- User quota: max 20 drafts per user
+CREATE TRIGGER IF NOT EXISTS `enforce_user_draft_quota`
+BEFORE INSERT ON `agent_card_drafts`
+BEGIN
+  SELECT RAISE(ABORT, 'user_quota_exceeded')
+  WHERE (SELECT COUNT(*) FROM `agent_card_drafts`
+         WHERE `user_id` = NEW.`user_id`) >= 20;
+END;
+
+-- Org quota: max 50 drafts per org (counts all drafts regardless of is_shared)
+CREATE TRIGGER IF NOT EXISTS `enforce_org_draft_quota`
+BEFORE INSERT ON `agent_card_drafts`
+BEGIN
+  SELECT RAISE(ABORT, 'org_quota_exceeded')
+  WHERE NEW.`org_id` IS NOT NULL
+    AND (SELECT COUNT(*) FROM `agent_card_drafts`
+         WHERE `org_id` = NEW.`org_id`) >= 50;
+END;
 ```
 
 ---
@@ -384,17 +427,28 @@ The implementation is broken into **5 distinct, fully-specified phases** with ze
     import Ajv2020 from "ajv/dist/2020";
     const ajv = new Ajv2020({ allErrors: true });
     ```
-  - [ ] Implement Tier 1 structural validation: `name`, `description`, `version`, `supportedInterfaces`, `capabilities`, `defaultInputModes`, `defaultOutputModes`, `skills` (with required `tags`).
+  - [ ] Implement Tier 1 structural validation: `name`, `description`, `version`, `supportedInterfaces`, `capabilities` (validating `extensions[]` objects `{ uri, description?, required?, params? }`), `defaultInputModes`, `defaultOutputModes`, `skills` (with required `tags` array and optional `inputModes`/`outputModes`/`examples`/`securityRequirements`).
   - [ ] Implement v0.3 legacy format detector covering all four migration categories (structural, enum values, Part `kind` discriminator, and top-level `supportsAuthenticatedExtendedCard`).
   - [ ] Enforce 10KB payload limit.
 - [ ] **Tier 2 Network & Tier 4 Trust Probers**:
   - [ ] Implement live HTTP/HTTPS probe with CORS header analysis.
-  - [ ] Implement JWS signature verification using the **`jose`** library ([panva/jose](https://github.com/panva/jose)) — it runs natively on Cloudflare Workers without Node.js crypto dependencies. For JCS canonicalization (RFC 8785) apply the **`canonicalize`** package before constructing the JWS payload. The verification flow is:
+  - [ ] Implement JWS signature verification using the **`jose`** library ([panva/jose](https://github.com/panva/jose)) — runs natively on Cloudflare Workers without Node.js crypto dependencies. For JCS canonicalization (RFC 8785) use the **`json-canonicalize`** package (the RFC 8785 reference implementation by Erdtman/cyberphone — use this, not the generic `canonicalize` package which has known RFC 8785 deviations). The full verification flow:
     1. Remove the `signatures` field from the card JSON object.
-    2. Apply JCS canonicalization via `canonicalize(cardWithoutSignatures)` to produce the deterministic payload string.
-    3. For each entry in `signatures[]`, base64url-decode `protected`, extract `alg`, `kid`, and `jku`.
-    4. Fetch the JWKS from `jku` (over HTTPS only), locate the key by `kid`.
-    5. Verify using `jose`'s `flattenedVerify` with the canonical payload as the JWS payload bytes.
+    2. Apply JCS canonicalization via `jsonCanonicalizer(cardWithoutSignatures)` to produce the deterministic payload bytes.
+    3. For each entry in `signatures[]`, base64url-decode `protected`, extract `alg`, `kid`, and `jku` (or inline `jwk`).
+    4. Fetch the JWKS from `jku` (over HTTPS only) or read inline `jwk`, locate the key by `kid`.
+    5. Verify using `jose`'s `flattenedVerify` with the **`detachedPayload`** option — the A2A card uses a detached-payload JWS shape where the payload sits outside the signature object:
+    ```typescript
+    import { flattenedVerify } from "jose";
+    import canonicalize from "json-canonicalize";
+
+    const payload = new TextEncoder().encode(canonicalize(cardWithoutSignatures));
+    await flattenedVerify(
+      { protected: sig.protected, signature: sig.signature, header: sig.header },
+      publicKey,
+      { detachedPayload: payload }
+    );
+    ```
   - [ ] Integrate DNS TXT (`_a2a.<domain>`) and GoDaddy ANS (`a2a://`) verification.
 - [ ] **Security & Guardrails**:
   - [ ] Implement SSRF validator utility (`backend/src/utils/ssrf.ts`) with post-DNS IP checks.
@@ -410,7 +464,7 @@ The implementation is broken into **5 distinct, fully-specified phases** with ze
 - [ ] Direct Action Buttons: **"Open in Builder & Fix"** and **"Publish to Registry"** CTA.
 
 #### 1.3 Standalone CLI Package (`packages/a2a-validate`)
-The validator logic must be split into a **shared core** that runs in both the Cloudflare Worker and Node.js (CLI) environments. The correct architecture:
+The validator logic must be split into a **shared core** that runs in both the Cloudflare Worker and Node.js (CLI) environments:
 
 - **`packages/core/validator/`** — Pure TypeScript module with zero runtime-specific dependencies. Contains Tier 1 (Ajv schema) and Tier 3 (semantic) checks. Uses the standard `fetch` API for Tier 2 network probing (available in both Node 18+ and Cloudflare Workers). Tier 4 DNS resolution differs by runtime — expose a pluggable `dnsResolver` interface so Workers can use Cloudflare's DNS-over-HTTPS and Node can use the `dns` module.
 - **`backend/src/services/validator.ts`** — Imports from `packages/core/validator/` and wires in the Workers `dnsResolver`.
@@ -431,19 +485,19 @@ The validator logic must be split into a **shared core** that runs in both the C
 #### 2.1 Builder UI & Form Components (`portal/src/app/tools/builder/page.tsx`)
 - [ ] **Visual Form Sections**:
   - [ ] **Identity**: Name, Description, SemVer, Icon URL, Docs URL, Provider (Organization name + URL), Reverse-DNS Package Name (*Registry Extension*).
-  - [ ] **Supported Interfaces List**: Multi-row editor for `supportedInterfaces` with `url`, `protocolBinding` (`JSONRPC`, `GRPC`, `HTTP+JSON`), `protocolVersion` (`1.0`), and `tenant`. Support drag-to-reorder for preferred interface.
-  - [ ] **Capabilities**: Toggle switches for `streaming`, `pushNotifications`, and `extendedAgentCard`. Sub-editor for `extensions[]` array (AgentExtension objects with `uri`, `description`, `required`).
+  - [ ] **Supported Interfaces List**: Multi-row editor for `supportedInterfaces` with `url`, `protocolBinding` (presets for `JSONRPC`, `GRPC`, `HTTP+JSON` plus custom URI input with autocomplete), `protocolVersion` (`1.0`), and optional `tenant`. Support drag-to-reorder for preferred interface.
+  - [ ] **Capabilities**: Toggle switches for `streaming`, `pushNotifications`, and `extendedAgentCard`. Sub-editor for `extensions[]` array (`AgentExtension` objects with `uri`, `description`, `required`, `params`).
   - [ ] **Input & Output Modes**: Multi-select for `defaultInputModes` and `defaultOutputModes`.
-  - [ ] **Skills Editor**: Dynamic list with ID, Name, Description, **Tags (required string array)**, JSON Schema parameter builder, Example Prompts, and an optional advanced section for per-skill `securityRequirements` (referencing scheme names from the card-level `securitySchemes` map).
+  - [ ] **Skills Editor**: Dynamic list with `id`, `name`, `description`, **`tags` (required string array)**, per-skill `inputModes`/`outputModes` (MIME type multi-select), `examples` (prompt list), and optional per-skill `securityRequirements`. No `inputSchema`/`outputSchema` fields — not part of v1.0 spec.
   - [ ] **Security Schemes & Requirements**: Named `securitySchemes` map editor and card-level `securityRequirements` array.
-  - [ ] **Signatures**: JWS signature attachment section (see JWS generation scope note in Phase 2 notes below).
+  - [ ] **Signatures**: JWS signature attachment section (see JWS generation scope note below).
 - [ ] **CodeMirror 6 Integration**:
-  - [ ] Integrate using official `@codemirror/view`, `@codemirror/state`, `@codemirror/lang-json`, and `@codemirror/lint` packages with a React `useEffect`/`useRef` wrapper. Do not introduce `@uiw/react-codemirror` or other community wrappers.
+  - [ ] Integrate using official `@codemirror/view`, `@codemirror/state`, `@codemirror/lang-json`, and `@codemirror/lint` packages with a React `useEffect`/`useRef` wrapper. Do not introduce community wrappers.
   - [ ] Bi-directional sync with 300ms debounce and active-focus locking.
   - [ ] Non-destructive syntax error banner when raw JSON is invalid mid-typing.
 - [ ] **Export Options**: One-click Copy, Download `agent-card.json`, and instant "Run Validator" trigger.
 
-> **JWS Signature Generation Scope Note**: Client-side signing uses the browser's native **WebCrypto API** — the private key is imported as non-extractable (`extractable: false`) and never leaves the browser. The recommended algorithm is **ES256** (ECDSA P-256). The generated signature requires a JWKS endpoint hosting the matching public key, referenced via the `jku` header in `signatures[].protected`. The builder generates the signature and the corresponding JWKS JSON for download, but **JWKS hosting is the developer's responsibility** — the builder provides clear instructions and a hosting guide (e.g. serve from `https://yourdomain.com/.well-known/jwks.json`). Registry-managed JWKS hosting is out of scope for Phase 2 and tracked as a future enhancement.
+> **JWS Signature Generation Scope Note**: Client-side signing uses the browser's native **WebCrypto API** — the private key is imported as non-extractable (`extractable: false`) and never leaves the browser. The recommended algorithm is **ES256** (ECDSA P-256). The generated signature requires a JWKS endpoint hosting the matching public key, referenced via the `jku` header in `signatures[].protected` (or inline `jwk`). The builder generates the signature and the corresponding JWKS JSON for download, but **JWKS hosting is the developer's responsibility** — the builder provides clear instructions and a hosting guide (e.g. serve from `https://yourdomain.com/.well-known/jwks.json`). Registry-managed JWKS hosting is out of scope for Phase 2 and tracked as a future enhancement.
 
 #### 2.2 Template Library & Hosting Snippet Generator
 - [ ] **v1.0 Templates**: Utility Agent (JSON-RPC), Multi-Tenant Enterprise Agent (gRPC), Assistant (Streaming), and MCP Wrapper.
@@ -464,13 +518,13 @@ The validator logic must be split into a **shared core** that runs in both the C
 #### 3.1 Converter Engines & Backend Endpoints
 - [ ] **OpenAPI 3.0/3.1 Converter (`backend/src/services/converters/openapi.ts`)**:
   - [ ] Implement schema dereferencing using **`@apidevtools/json-schema-ref-parser`** — handles cross-file `$ref`, circular references, YAML OpenAPI specs, and both local and remote file references. Call `.dereference()` before processing `paths`.
-  - [ ] Normalize schema differences between OpenAPI versions: OAS 3.0 uses `nullable: true` alongside a type; OAS 3.1 uses `type: ["string", "null"]`. The converter must normalise both patterns to JSON Schema Draft 2020-12 style (`type: ["string", "null"]`) for A2A skill parameter schemas.
-  - [ ] Transform `paths` and HTTP verbs into A2A `skills[]` with JSON Schema parameters and auto-generated tags.
+  - [ ] Normalize schema differences between OpenAPI versions: OAS 3.0 uses `nullable: true` alongside a type; OAS 3.1 uses `type: ["string", "null"]`. The converter must normalize both patterns to JSON Schema Draft 2020-12 style (`type: ["string", "null"]`) where parameter schemas are surfaced in skill `description` and `examples`.
+  - [ ] Transform `paths` and HTTP verbs into A2A `skills[]` with auto-generated `tags`, `inputModes`/`outputModes` derived from request/response content types, and `examples` synthesized from operation summaries.
   - [ ] Map `servers[].url` entries to `supportedInterfaces` (default to `HTTP+JSON` binding).
   - [ ] Treat conversion as **best-effort draft output** that the developer refines in the builder — document this clearly in the UI.
 - [ ] **Anthropic MCP Converter (`backend/src/services/converters/mcp.ts`)**:
   - [ ] Ingest `claude_desktop_config.json` or MCP manifests.
-  - [ ] Map MCP tools, descriptions, and input schemas to A2A skills.
+  - [ ] Map MCP tools, descriptions, and input type hints to A2A skills (`tags`, `inputModes`, `examples`).
 - [ ] **Endpoints**:
   - [ ] `POST /public/tools/convert/openapi` (accepts raw JSON or SSRF-guarded URL).
   - [ ] `POST /public/tools/convert/mcp` (accepts JSON payload).
@@ -489,15 +543,27 @@ The validator logic must be split into a **shared core** that runs in both the C
 - [ ] **D1 Migration (`backend/migrations/0028_agent_card_drafts.sql`)**:
   - [ ] Create `agent_card_drafts` (with `is_shared` flag) and `agent_card_versions` tables.
 - [ ] **Draft Management APIs (`backend/src/routes/drafts.ts`)**:
-  - [ ] **Atomic quota check** using D1's `db.batch()` API, which wraps multiple statements in a single SQLite transaction. D1 does not support `SELECT FOR UPDATE`, so `batch()` is the correct mechanism to avoid race conditions under concurrent autosave requests:
-    ```typescript
-    const [countRow] = await db.batch([
-      db.prepare(`SELECT COUNT(*) AS n FROM agent_card_drafts WHERE user_id = ?`).bind(userId),
-    ]);
-    if ((countRow.results[0] as any).n >= QUOTA) throw new QuotaExceededError();
-    await db.prepare(`INSERT INTO agent_card_drafts ...`).bind(...).run();
+  - [ ] **Quota enforcement via SQLite trigger** (not application-level SELECT+INSERT, which has a race condition under concurrent autosave). Add the following triggers to the migration — SQLite enforces them atomically inside its write lock:
+    ```sql
+    -- Enforced in: 0028_agent_card_drafts.sql
+    CREATE TRIGGER IF NOT EXISTS enforce_user_draft_quota
+    BEFORE INSERT ON agent_card_drafts
+    BEGIN
+      SELECT RAISE(ABORT, 'user_quota_exceeded')
+      WHERE (SELECT COUNT(*) FROM agent_card_drafts
+             WHERE user_id = NEW.user_id) >= 20;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS enforce_org_draft_quota
+    BEFORE INSERT ON agent_card_drafts
+    BEGIN
+      SELECT RAISE(ABORT, 'org_quota_exceeded')
+      WHERE NEW.org_id IS NOT NULL
+        AND (SELECT COUNT(*) FROM agent_card_drafts
+             WHERE org_id = NEW.org_id) >= 50;
+    END;
     ```
-    Apply the same pattern for org-level quota (`org_id` + `is_shared = 1`).
+    The API layer catches the `SQLITE_CONSTRAINT_TRIGGER` error and returns HTTP 429. Note: the org trigger counts **all** drafts in the org regardless of `is_shared` state — org members share a single pool of 50 slots.
   - [ ] CRUD endpoints (`GET/POST/PUT/DELETE /api/tools/drafts`).
   - [ ] `GET/POST /api/tools/drafts/:id/versions` for revision snapshots.
 
@@ -546,4 +612,4 @@ The validator logic must be split into a **shared core** that runs in both the C
 1. **CLI Distribution Channel**:  
    * Publish `@a2a-registry/validate` on npm under the registry org so developers can run `npx @a2a-registry/validate https://my-agent.com` in CI/CD without installing dependencies.
 2. **Team Sharing Defaults**:  
-   * `is_shared` defaults to `0` (private to the author), consistent with the DB schema `DEFAULT 0`. Developers explicitly toggle sharing to make a draft visible to all org members. This is the safer default — auto-sharing drafts org-wide on save is a data-leak footgun. The UI toggle is labelled *"Share with organization"* and is off by default.
+   * `is_shared` defaults to `0` (private to the author), consistent with the DB schema `DEFAULT 0`. Developers explicitly toggle sharing to make a draft visible to all org members. The UI toggle is labelled *"Share with organization"* and is off by default.
