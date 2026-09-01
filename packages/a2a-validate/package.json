@@ -1,0 +1,37 @@
+{
+  "name": "@a2a-registry/validate",
+  "version": "1.0.0",
+  "description": "Self-contained CLI validator for Linux Foundation Agent-to-Agent (A2A) Protocol v1.0 agent cards. Runs fully offline — no registry API required.",
+  "bin": {
+    "a2a-validate": "./bin/cli.js"
+  },
+  "main": "./src/index.js",
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "a2a",
+    "agent-card",
+    "validator",
+    "ai-agents",
+    "linux-foundation",
+    "offline",
+    "cli"
+  ],
+  "author": "A2A Registry Contributors",
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "node test/cli.test.js"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "jose": "^5.10.0",
+    "json-canonicalize": "^1.2.0"
+  }
+}
