@@ -58,6 +58,23 @@ https://a2a-registry.org/extensions/registry/v1
 
 This URI is owned by the registry and versioned. A breaking change to the `params` schema would require a new URI (`/v2`). Additive changes (new optional keys) do not require a version bump.
 
+#### URI Dereferencing
+
+Per web protocol conventions, dereferencing this URI via HTTP GET should return useful content. The registry should serve:
+- An HTML human-readable documentation page at the URI by default
+- The machine-readable JSON Schema for `params` via content negotiation (`Accept: application/schema+json`)
+
+This allows validators, IDEs, and tooling to auto-discover the extension schema from the URI itself.
+
+#### Trailing Slash Normalization
+
+Scanner and validator code that compares extension URIs MUST normalize trailing slashes before comparison, so `.../v1` and `.../v1/` are treated identically:
+
+```typescript
+const REGISTRY_EXT_URI = 'https://a2a-registry.org/extensions/registry/v1';
+const match = (uri: string) => uri.replace(/\/$/, '') === REGISTRY_EXT_URI;
+```
+
 ### Full Declaration Example
 
 ```json
@@ -102,6 +119,8 @@ This URI is owned by the registry and versioned. A breaking change to the `param
 
 The `required: false` is mandatory here — the registry extension is purely informational and a client that doesn't understand it must not refuse to interact with the agent.
 
+> **Validator enforcement:** The `A2AManifestValidator` should actively check this. If an agent declares the registry extension URI with `required: true`, the validator must emit a warning/error (`REGISTRY_EXT_MUST_BE_OPTIONAL`). A general A2A client that doesn't recognize the registry extension would reject connections to any agent that marks it required — which would break interoperability.
+
 ---
 
 ## 3. `params` Schema
@@ -120,9 +139,11 @@ Used by agents hosted on platforms where subdomain ownership implies account own
 
 **Validation rules (enforced by the registry):**
 - `provider` must be `"github"` (the only supported provider at this time)
-- `packageName` must start with `github.{username}.` or `github.{username}/` (case-insensitive) — prevents namespace hijacking
-- At **claim time**, the signed-in user's linked GitHub account must match `username` — verified by `resolveClaimIdentity()` in `src/utils/registry-meta.ts`
-- Only honoured when the agent card is served from a trusted personal-hosting domain (`*.workers.dev`, `*.github.io`) — see `PERSONAL_HOSTING_DOMAINS` in `src/utils/registry-meta.ts`
+- `packageName` must start with `github.{username}.` or `github.{username}/` (case-insensitive)
+- At **claim time**, the signed-in user's linked GitHub account must match `username`
+- Only honoured when the agent card is served from a trusted personal-hosting domain (`*.workers.dev`, `*.github.io`)
+
+**Future provider expansion:** The `provider` field is intentionally a string to accommodate future providers (`gitlab`, `huggingface`, etc.) without a schema version bump. Each new provider requires a corresponding implementation in `resolveClaimIdentity()` and a new entry in the supported providers list.
 
 **Example:**
 ```json
@@ -167,9 +188,16 @@ The list is open-ended — values not listed here are accepted by the registry a
 |---|---|---|---|
 | `network` | string | Yes | The settlement network or blockchain. e.g. `"nano"`, `"base"`, `"solana"`, `"ethereum"`, `"lightning"`, `"stripe"` |
 | `token` | string | No | The currency or token on that network. e.g. `"XNO"`, `"USDC"`, `"ETH"`, `"BTC"`. Omit for networks where the currency is implicit (e.g. `"nano"` always means XNO). |
+| `protocols` | array of string | No | Which payment protocols can use this specific rail. If omitted, the rail applies to all protocols declared at the top level. Use this to resolve M:N ambiguity when different protocols settle on different rails (see example below). |
 | `type` | string | No | Settlement category: `"crypto"`, `"fiat"`, or `"stablecoin"`. Helps filter by settlement type without parsing network/token. |
 | `feeModel` | string | No | Fee model hint: `"feeless"`, `"low"`, `"variable"`. Informational — not validated by registry. |
 | `settlementTime` | string | No | Approximate settlement time hint: `"instant"` (<2s), `"fast"` (<60s), `"standard"` (minutes-hours), `"slow"` (hours-days). Informational. |
+| `caip2` | string | No | [CAIP-2](https://github.com/ChainAgnostic/CAIPs/blob/main/CAIPs/caip-2.md) chain identifier for unambiguous network identification. e.g. `"eip155:8453"` (Base Mainnet), `"eip155:84532"` (Base Sepolia), `"solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"` (Solana Mainnet). Strongly recommended for EVM chains to distinguish mainnet from testnets. |
+| `contractAddress` | string | No | Token contract address on the network. Recommended for stablecoins to prevent ticker spoofing (e.g. bridged vs native USDC). e.g. `"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"` (USDC on Base). |
+
+> **Note on `caip2` / `contractAddress`:** For autonomous agent settlement, an agent paying on Base Sepolia (testnet) when intending Base Mainnet is a real failure mode. The `caip2` field and `contractAddress` field are informational in v1 — the registry does not verify them — but they provide sufficient signal for client agents to validate before initiating payment.
+
+> **Note on pricing:** The `payment` object describes *settlement capability* — which protocols and rails this agent can receive payment on. It does not describe per-request pricing. In x402 and AP2, pricing is negotiated dynamically at invocation time via HTTP 402 response headers. Per-request pricing hints (e.g. `pricingModel: "pay-per-request"`) are a candidate for a future Phase 3 extension key.
 
 **Example — Nano-only agent using x402:**
 ```json
@@ -187,22 +215,43 @@ The list is open-ended — values not listed here are accepted by the registry a
 }
 ```
 
-**Example — Multi-rail agent (x402 + AP2, accepts USDC on Base or Solana):**
+**Example — Multi-rail agent (x402 + Stripe, each on different rails) — demonstrating per-rail protocol binding:**
 ```json
 "payment": {
-  "protocols": ["x402", "ap2"],
+  "protocols": ["x402", "stripe"],
   "rails": [
     {
       "network": "base",
       "token": "USDC",
       "type": "stablecoin",
+      "protocols": ["x402"],
+      "caip2": "eip155:8453",
+      "contractAddress": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
       "feeModel": "low",
       "settlementTime": "fast"
     },
     {
+      "network": "stripe",
+      "token": "USD",
+      "type": "fiat",
+      "protocols": ["stripe"]
+    }
+  ]
+}
+```
+Without `protocols` on each rail, a query for `?payment_protocol=stripe&payment_rail=base:USDC` would falsely match this agent. With per-rail `protocols`, the registry correctly resolves that stripe only applies to the USD/Stripe rail.
+
+**Example — Solana USDC with chain disambiguation:**
+```json
+"payment": {
+  "protocols": ["x402", "ap2"],
+  "rails": [
+    {
       "network": "solana",
       "token": "USDC",
       "type": "stablecoin",
+      "caip2": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      "contractAddress": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
       "feeModel": "low",
       "settlementTime": "instant"
     }
@@ -280,7 +329,14 @@ The registry **continues to support** the legacy `metadata` pattern for identity
 
 ### v1.0 Cards
 
-New agents publishing a v1.0 card should use the extension. The registry's `/tools/validate-url` and `/tools/validate-json` endpoints will warn (not error) if a v1.0 card uses `card.metadata` for registry hints, and suggest migrating to the extension.
+New agents publishing a v1.0 card should use the extension. The registry's `/tools/validate-url` and `/tools/validate-json` endpoints will emit specific warning codes for non-conforming cards:
+
+| Code | Severity | Condition | Message |
+|---|---|---|---|
+| `DEPRECATED_REGISTRY_METADATA` | Warning | v1.0 card has `card.metadata.registryIdentityProvider` | "Legacy metadata-based identity hints are deprecated in A2A v1.0. Migrate to `capabilities.extensions` with URI `https://a2a-registry.org/extensions/registry/v1`." |
+| `REGISTRY_EXT_MUST_BE_OPTIONAL` | Error | Registry extension is declared with `required: true` | "The registry extension must be declared with `required: false`. Setting it required will cause general A2A clients to reject connections." |
+| `REGISTRY_EXT_IDENTITY_INVALID` | Error | `identity.packageName` does not start with `{provider}.{username}.` | "Package name must be namespaced under the declared identity: `github.{username}.*`" |
+| `REGISTRY_EXT_PAYMENT_RAIL_MISSING_NETWORK` | Warning | A `rails` entry has no `network` field | "Each payment rail entry must include a `network` field." |
 
 ---
 
