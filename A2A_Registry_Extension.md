@@ -139,7 +139,7 @@ Used by agents hosted on platforms where subdomain ownership implies account own
 
 **Validation rules (enforced by the registry):**
 - `provider` must be `"github"` (the only supported provider at this time)
-- `packageName` must start with `github.{username}.` or `github.{username}/` (case-insensitive)
+- `packageName` must start with `github.{username}.` or `github.{username}/` (case-insensitive) — prevents namespace hijacking. Note: comparison is always case-insensitive but the value is stored as provided (case-preserved) for display
 - At **claim time**, the signed-in user's linked GitHub account must match `username`
 - Only honoured when the agent card is served from a trusted personal-hosting domain (`*.workers.dev`, `*.github.io`)
 
@@ -169,12 +169,13 @@ Used by agents that accept payment for their services. Separates the **protocol*
 |---|---|---|---|
 | `protocols` | array of string | No | Payment negotiation protocols supported. See values below. |
 | `rails` | array of `PaymentRail` | No | Settlement rails accepted. Each entry is an object. |
+| `direction` | string | No | Whether this agent **receives** payment, **makes** payment, or both. Values: `"inbound"` (can be paid), `"outbound"` (can pay others), `"both"`. Defaults to `"inbound"` if omitted — preserving backward compatibility with all existing cards. Makes it possible to query "which agents can pay me" as well as "which agents can I pay". |
 
 #### `protocols` values
 
 | Value | Description |
 |---|---|
-| `x402` | HTTP 402-based payment protocol (Coinbase open standard). Client retries request with signed payment header. |
+| `x402` | HTTP 402-based payment protocol (Coinbase open standard). The protocol envelope — covers all x402 payment schemes (`exact`, `upto`, `batch-settlement`). The specific scheme is declared per-rail using the `scheme` field on `PaymentRail`. |
 | `ap2` | Agent Payment Protocol — higher-level payment layer above x402. |
 | `lightning-invoice` | Bitcoin Lightning Network BOLT11 invoice. |
 | `stripe` | Stripe-based payment (traditional card/bank). Bundles protocol + rail. |
@@ -188,28 +189,47 @@ The list is open-ended — values not listed here are accepted by the registry a
 |---|---|---|---|
 | `network` | string | Yes | The settlement network or blockchain. e.g. `"nano"`, `"base"`, `"solana"`, `"ethereum"`, `"lightning"`, `"stripe"` |
 | `token` | string | No | The currency or token on that network. e.g. `"XNO"`, `"USDC"`, `"ETH"`, `"BTC"`. Omit for networks where the currency is implicit (e.g. `"nano"` always means XNO). |
+| `scheme` | string | No | The x402 payment scheme used on this rail. Only relevant when `protocols` includes `x402`. Values mirror the x402 spec: `"exact"` (fixed price, buyer authorizes the advertised amount — default), `"upto"` (metered, buyer authorizes a maximum and seller charges actual usage), `"batch-settlement"` (high-volume channel, per-request authorizations accumulate). Defaults to `"exact"` if omitted for x402 rails. |
 | `protocols` | array of string | No | Which payment protocols can use this specific rail. If omitted, the rail applies to all protocols declared at the top level. Use this to resolve M:N ambiguity when different protocols settle on different rails (see example below). |
 | `type` | string | No | Settlement category: `"crypto"`, `"fiat"`, or `"stablecoin"`. Helps filter by settlement type without parsing network/token. |
 | `feeModel` | string | No | Fee model hint: `"feeless"`, `"low"`, `"variable"`. Informational — not validated by registry. |
 | `settlementTime` | string | No | Approximate settlement time hint: `"instant"` (<2s), `"fast"` (<60s), `"standard"` (minutes-hours), `"slow"` (hours-days). Informational. |
 | `caip2` | string | No | [CAIP-2](https://github.com/ChainAgnostic/CAIPs/blob/main/CAIPs/caip-2.md) chain identifier for unambiguous network identification. e.g. `"eip155:8453"` (Base Mainnet), `"eip155:84532"` (Base Sepolia), `"solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"` (Solana Mainnet). Strongly recommended for EVM chains to distinguish mainnet from testnets. |
 | `contractAddress` | string | No | Token contract address on the network. Recommended for stablecoins to prevent ticker spoofing (e.g. bridged vs native USDC). e.g. `"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"` (USDC on Base). |
+| `verification` | object | No | Describes how a paying client can **confirm** that payment landed — the proof mechanism. This is the second half of "autonomously settleable": discovery finds the agent; verification closes the loop. See `PaymentVerification` object below. |
+
+#### `PaymentVerification` object
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `mode` | string | Yes | The confirmation method, aligned with the x402 scheme on the rail. `"exact"` (x402 exact-scheme — block hash or signed receipt returned in response header), `"upto"` (x402 upto-scheme — actual amount settled confirmed via response), `"on-chain-scan"` (query a public node independently), `"webhook"` (agent posts a callback). For non-x402 rails use `"on-chain-scan"` or `"webhook"`. |
+| `proof` | string | No | The specific header name, endpoint, or mechanism that carries the proof. e.g. `"X-Nano-Payment"` for the Nano exact-scheme block-hash header, `"X-Payment-Response"` for standard x402. |
+| `verifyUrl` | string | No | URL of a public node or API endpoint an autonomous client can query to independently verify the transaction, without a facilitator. e.g. a Nano RPC node URL for on-chain confirmation. |
+
+> **Why `verification` matters for autonomous agents:** Discovery (`?payment_rail=nano:XNO`) answers "can I pay this agent?". Verification answers "did my payment land, and how do I know?". Without a declared proof mechanism, a rail is *discoverable* but not *autonomously settleable* — the client must still rely on facilitators or out-of-band checks. For the Nano exact-scheme, the first concrete value is `mode: "exact", proof: "X-Nano-Payment"` — the block hash returned in the response header, which any client can verify against a public Nano node with no intermediary.
 
 > **Note on `caip2` / `contractAddress`:** For autonomous agent settlement, an agent paying on Base Sepolia (testnet) when intending Base Mainnet is a real failure mode. The `caip2` field and `contractAddress` field are informational in v1 — the registry does not verify them — but they provide sufficient signal for client agents to validate before initiating payment.
 
 > **Note on pricing:** The `payment` object describes *settlement capability* — which protocols and rails this agent can receive payment on. It does not describe per-request pricing. In x402 and AP2, pricing is negotiated dynamically at invocation time via HTTP 402 response headers. Per-request pricing hints (e.g. `pricingModel: "pay-per-request"`) are a candidate for a future Phase 3 extension key.
 
-**Example — Nano-only agent using x402:**
+**Example — Nano-only agent using x402 exact scheme (inbound, with verification):**
 ```json
 "payment": {
+  "direction": "inbound",
   "protocols": ["x402"],
   "rails": [
     {
       "network": "nano",
       "token": "XNO",
+      "scheme": "exact",
       "type": "crypto",
       "feeModel": "feeless",
-      "settlementTime": "instant"
+      "settlementTime": "instant",
+      "verification": {
+        "mode": "exact",
+        "proof": "X-Nano-Payment",
+        "verifyUrl": "https://proxy.nano.org/rpc"
+      }
     }
   ]
 }
@@ -403,14 +423,21 @@ New agents publishing a v1.0 card should use the extension. The registry's `/too
         "required": false,
         "params": {
           "payment": {
+            "direction": "inbound",
             "protocols": ["x402"],
             "rails": [
               {
                 "network": "nano",
                 "token": "XNO",
+                "scheme": "exact",
                 "type": "crypto",
                 "feeModel": "feeless",
-                "settlementTime": "instant"
+                "settlementTime": "instant",
+                "verification": {
+                  "mode": "exact",
+                  "proof": "X-Nano-Payment",
+                  "verifyUrl": "https://proxy.nano.org/rpc"
+                }
               }
             ]
           }
@@ -422,11 +449,12 @@ New agents publishing a v1.0 card should use the extension. The registry's `/too
 ```
 
 **Registry behaviour:**
-- `x402` is indexed as a payment protocol on the agent
+- `x402` is indexed as a payment protocol
 - `nano:XNO` is indexed as a payment rail
-- `GET /public/agents?payment_protocol=x402&payment_rail=nano:XNO` returns only Nano-settling x402 agents
+- `direction: "inbound"` is indexed — allows `?payment_direction=inbound` queries
+- `GET /public/agents?payment_protocol=x402&payment_rail=nano:XNO` returns only Nano x402 agents
 - `GET /public/agents?payment_rail=nano:XNO` returns all Nano agents regardless of protocol
-- A builder searching for "feeless, sub-second settlement" can filter directly — no more mixed full-text results
+- The `verification` object (with `scheme: "exact"` and the Nano RPC endpoint) is stored in `config.payment` for client agents to retrieve — gives a paying client both halves of autonomous settlement: how to find the agent and how to confirm payment landed without a facilitator
 
 ---
 
