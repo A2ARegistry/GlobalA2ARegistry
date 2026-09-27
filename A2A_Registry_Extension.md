@@ -188,10 +188,10 @@ The list is open-ended — values not listed here are accepted by the registry a
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `network` | string | Yes | The settlement network or blockchain. e.g. `"nano"`, `"base"`, `"solana"`, `"ethereum"`, `"lightning"`, `"stripe"` |
-| `token` | string | No | The currency or token on that network. e.g. `"XNO"`, `"USDC"`, `"ETH"`, `"BTC"`. Omit for networks where the currency is implicit (e.g. `"nano"` always means XNO). |
-| `scheme` | string | No | The x402 payment scheme used on this rail. Only relevant when `protocols` includes `x402`. Values mirror the x402 spec: `"exact"` (fixed price, buyer authorizes the advertised amount — default), `"upto"` (metered, buyer authorizes a maximum and seller charges actual usage), `"batch-settlement"` (high-volume channel, per-request authorizations accumulate). Defaults to `"exact"` if omitted for x402 rails. |
-| `protocols` | array of string | No | Which payment protocols can use this specific rail. If omitted, the rail applies to all protocols declared at the top level. Use this to resolve M:N ambiguity when different protocols settle on different rails (see example below). |
-| `type` | string | No | Settlement category: `"crypto"`, `"fiat"`, or `"stablecoin"`. Helps filter by settlement type without parsing network/token. |
+| `token` | string | No | The currency or token on that network. e.g. `"XNO"`, `"USDC"`, `"ETH"`, `"BTC"`. Omit for networks where the currency is implicit (e.g. `"nano"` always means XNO). This is the **registry's normalized field name** for "what is transferred" across all protocol types — crypto tokens, fiat billing currencies (e.g. Stripe USD), and credit billing currencies (e.g. Visa USD) all use `token`. Future rail types that use a protocol-specific field name for this concept (e.g. `currency`, `denomination`, `coin`) should still map that value into `token` for registry compatibility. If a future rail type genuinely cannot express its value-unit concept via `token`, a new field may be introduced — but `buildRailRow` in the registry backend must be explicitly updated to map it to the `asset` DB column; it will not be auto-discovered. |
+| `scheme` | string | No | The x402 payment scheme used on this rail. Only relevant when `protocol` is `x402`. Values mirror the x402 spec: `"exact"` (fixed price, buyer authorizes the advertised amount — default), `"upto"` (metered, buyer authorizes a maximum and seller charges actual usage), `"batch-settlement"` (high-volume channel, per-request authorizations accumulate). Defaults to `"exact"` if omitted for x402 rails. |
+| `protocol` | string | No | Which payment protocol uses this specific rail. If omitted, the rail applies to all protocols declared at the top level. Use this when different protocols settle on different rails — e.g. x402 on base:USDC but Stripe on stripe:USD (see example below). |
+| `type` | string | No | Settlement category: `"crypto"`, `"fiat"`, `"stablecoin"`, or `"credit"`. Helps filter by settlement type without parsing network/token. |
 | `feeModel` | string | No | Fee model hint: `"feeless"`, `"low"`, `"variable"`. Informational — not validated by registry. |
 | `settlementTime` | string | No | Approximate settlement time hint: `"instant"` (<2s), `"fast"` (<60s), `"standard"` (minutes-hours), `"slow"` (hours-days). Informational. |
 | `caip2` | string | No | [CAIP-2](https://github.com/ChainAgnostic/CAIPs/blob/main/CAIPs/caip-2.md) chain identifier for unambiguous network identification. e.g. `"eip155:8453"` (Base Mainnet), `"eip155:84532"` (Base Sepolia), `"solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"` (Solana Mainnet). Strongly recommended for EVM chains to distinguish mainnet from testnets. |
@@ -244,7 +244,7 @@ The list is open-ended — values not listed here are accepted by the registry a
       "network": "base",
       "token": "USDC",
       "type": "stablecoin",
-      "protocols": ["x402"],
+      "protocol": "x402",
       "caip2": "eip155:8453",
       "contractAddress": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
       "feeModel": "low",
@@ -254,12 +254,12 @@ The list is open-ended — values not listed here are accepted by the registry a
       "network": "stripe",
       "token": "USD",
       "type": "fiat",
-      "protocols": ["stripe"]
+      "protocol": "stripe"
     }
   ]
 }
 ```
-Without `protocols` on each rail, a query for `?payment_protocol=stripe&payment_rail=base:USDC` would falsely match this agent. With per-rail `protocols`, the registry correctly resolves that stripe only applies to the USD/Stripe rail.
+Without `protocol` on each rail, a query for `?payment_protocol=stripe&payment_rail=base:USDC` would falsely match this agent. With per-rail `protocol`, the registry correctly resolves that stripe only applies to the USD/Stripe rail.
 
 **Example — Solana USDC with chain disambiguation:**
 ```json

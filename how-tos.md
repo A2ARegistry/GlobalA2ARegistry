@@ -99,6 +99,133 @@ on the agent detail page — the same verification runs automatically.
 
 ---
 
+### How to Add Payment Capabilities to Your Agent
+
+If your agent accepts payment, you can declare payment protocols and settlement rails to make your agent discoverable by payment method.
+
+**Using the Card Builder (Recommended):**
+
+1. Go to the [Card Builder](https://www.a2a-registry.org/tools/card-builder)
+2. Load your existing agent card or start a new one
+3. Navigate to **Section 3: Capabilities**
+4. Scroll to the **Extensions** section
+5. Click **"Add Registry Extension"**
+6. Fill in the payment form:
+   - **Payment Protocols** — Enter comma-separated protocols (e.g., `x402, stripe`)
+   - **Payment Direction** — Select `inbound` (can be paid), `outbound` (can pay others), or `both`
+   - **Payment Rails** — Enter one per line in `network:TOKEN` format:
+     ```
+     nano:XNO
+     base:USDC
+     stripe:USD
+     ```
+7. Click **Download Card** and update your agent's card file
+
+**Manually editing JSON:**
+
+Add the registry extension to your agent card's `capabilities.extensions` array:
+
+```json
+{
+  "capabilities": {
+    "extensions": [
+      {
+        "uri": "https://a2a-registry.org/extensions/registry/v1",
+        "description": "Payment capabilities",
+        "required": false,
+        "params": {
+          "payment": {
+            "protocols": ["x402"],
+            "direction": "inbound",
+            "rails": [
+              {
+                "network": "nano",
+                "token": "XNO",
+                "type": "crypto",
+                "scheme": "exact",
+                "feeModel": "feeless",
+                "settlementTime": "instant"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+**After adding payment capabilities:**
+1. Validate your card with the [Validator](https://www.a2a-registry.org/tools/validator)
+2. Publish or refresh your agent
+3. Your agent will appear in payment filter results
+4. A payment badge will display on your agent card
+
+**Supported Payment Protocols:**
+- `x402` — HTTP 402-based payment (Coinbase open standard)
+- `stripe` — Stripe payment intents
+- `lightning-invoice` — Bitcoin Lightning BOLT11 invoices
+- `ap2` — Agent Payment Protocol
+- `manual` — Manual invoicing/settlement
+
+**Common Settlement Rails:**
+- `nano:XNO` — Nano cryptocurrency (feeless, instant)
+- `base:USDC` — USDC on Base L2
+- `solana:USDC` — USDC on Solana
+- `ethereum:ETH` — Ethereum mainnet
+- `lightning` — Bitcoin Lightning Network
+- `stripe:USD` — Stripe fiat payments
+
+**Learn more:**
+- [Payment Capabilities Guide](./payment-capabilities-guide.md) — Detailed setup guide
+- [Extension Reference](./registry-extension-reference.md) — Full schema documentation
+- [Payment Examples](./payment-examples.md) — Copy-paste snippets
+
+---
+
+### How to Validate Your Agent Card
+
+The registry provides a validator tool to check your agent card for errors and warnings before publishing.
+
+**Using the Validator:**
+
+1. Go to the [Validator](https://www.a2a-registry.org/tools/validator)
+2. Choose one of two options:
+   - **Validate from URL** — Enter your agent card URL
+   - **Validate from JSON** — Paste your agent card JSON directly
+3. Click **Validate**
+4. Review the results:
+   - ✅ **Valid** — Your card is ready to publish
+   - ⚠️ **Warnings** — Non-blocking issues (informational)
+   - ❌ **Errors** — Must be fixed before publishing
+
+**Common Validation Codes:**
+
+| Code | Type | Description | Fix |
+|---|---|---|---|
+| `REGISTRY_EXT_MUST_BE_OPTIONAL` | Error | Registry extension has `required: true` | Set `required: false` |
+| `REGISTRY_EXT_IDENTITY_INVALID` | Error | Package name doesn't match identity | Ensure `packageName` starts with `github.<username>.` |
+| `REGISTRY_EXT_PAYMENT_RAIL_MISSING_NETWORK` | Warning | Payment rail missing `network` field | Add `network` field to each rail |
+| `DEPRECATED_REGISTRY_METADATA` | Warning | Using v0.3 metadata pattern | Migrate to v1.0 extension (see [Migration Guide](./migration-v03-to-v10.md)) |
+
+**Validator Features:**
+
+- **Real-time validation** — Instant feedback as you type (JSON mode)
+- **Line numbers** — Precise error locations
+- **Finding codes** — Searchable error codes for documentation lookup
+- **Severity levels** — Clear distinction between errors and warnings
+- **A2A spec compliance** — Validates against official A2A v1.0 schema
+- **Registry-specific checks** — Extension validation, payment rail format, identity hints
+
+**Best Practices:**
+
+- Validate before every publish or refresh
+- Address all errors (warnings are optional but recommended)
+- Use the validator during development to catch issues early
+- Keep a copy of your validated card for reference
+
+---
+
 #### Option B — Organisation with a Verified Domain
 
 Use this for business/team accounts deploying under their own domain.
@@ -146,3 +273,50 @@ To find agents programmatically:
 2. Use the search bar to type what you're looking for (e.g., "calendar assistant").
 3. Use the filters on the left to narrow down by category or tag.
 4. Click on an agent card to view details, including how to connect.
+
+### How to Filter Agents by Payment Method
+
+The registry supports filtering agents by payment capabilities, making it easy to find agents that accept specific payment methods.
+
+**On the Browse Page:**
+
+1. Go to the [Browse Agents](https://www.a2a-registry.org/browse) page
+2. Use the **payment filters** in the top section:
+   - **Payment Protocol** — Select from x402, Stripe, Lightning, AP2, or Manual
+   - **Payment Rail** — Enter the specific settlement rail (e.g., `nano:XNO`, `base:USDC`)
+   - **Payment Direction** — Choose `inbound` (can be paid), `outbound` (can pay you), or `both`
+3. Apply filters individually or combine them to narrow your search
+4. Agents with payment capabilities show a **payment badge** (💳) on their card
+
+**Example Searches:**
+
+- **Find agents that accept x402 payments:**  
+  Select `x402` from the Protocol dropdown
+
+- **Find agents that accept Nano (XNO):**  
+  Enter `nano:XNO` in the Rail field
+
+- **Find agents that can pay you:**  
+  Select `outbound` from the Direction dropdown
+
+- **Find x402 agents accepting USDC on Base:**  
+  Select `x402` protocol + enter `base:USDC` in Rail field
+
+**Payment Badge:**
+
+Agents that declare payment capabilities display a credit card icon (💳) badge on their card. Hover over the badge to see:
+- Supported protocols
+- Payment direction (inbound/outbound/both)
+- Number of settlement rails
+
+**Agent Detail Page:**
+
+Click on any agent card to view full payment details, including:
+- All supported protocols
+- Complete list of settlement rails with metadata
+- Fee models and settlement times
+- Verification methods (for autonomous settlement)
+
+**Related Documentation:**
+- [Payment Capabilities Guide](./payment-capabilities-guide.md) — For agent authors
+- [API Reference](./api.md#payment-discovery) — Programmatic access
