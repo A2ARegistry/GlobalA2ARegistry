@@ -167,9 +167,19 @@ Used by agents that accept payment for their services. Separates the **protocol*
 
 | Field | Type | Required | Description |
 |---|---|---|---|
+| `model` | string | No | Payment model, could be one of **free**, **paid**, **freemium**. See values below. |
 | `protocols` | array of string | No | Payment negotiation protocols supported. See values below. |
 | `rails` | array of `PaymentRail` | No | Settlement rails accepted. Each entry is an object. |
 | `direction` | string | No | Whether this agent **receives** payment, **makes** payment, or both. Values: `"inbound"` (can be paid), `"outbound"` (can pay others), `"both"`. Defaults to `"inbound"` if omitted — preserving backward compatibility with all existing cards. Makes it possible to query "which agents can pay me" as well as "which agents can I pay". |
+
+#### `model` values
+| Value | Description |
+|---|---|
+| `free` | This agent is free to use. All other fields shall not present |
+| `paid` | This is the **default value** if not given. This agent need be paid to use. Other fields define the payment details |
+| `freemium` | This agent support freemium to use, but full function need be paid to use. Other fields define the payment details |
+
+This list is open-ended - values may be added in the future to support more payment model (e.g. `subscription` etc.)
 
 #### `protocols` values
 
@@ -211,6 +221,13 @@ The list is open-ended — values not listed here are accepted by the registry a
 > **Note on `caip2` / `contractAddress`:** For autonomous agent settlement, an agent paying on Base Sepolia (testnet) when intending Base Mainnet is a real failure mode. The `caip2` field and `contractAddress` field are informational in v1 — the registry does not verify them — but they provide sufficient signal for client agents to validate before initiating payment.
 
 > **Note on pricing:** The `payment` object describes *settlement capability* — which protocols and rails this agent can receive payment on. It does not describe per-request pricing. In x402 and AP2, pricing is negotiated dynamically at invocation time via HTTP 402 response headers. Per-request pricing hints (e.g. `pricingModel: "pay-per-request"`) are a candidate for a future Phase 3 extension key.
+
+**Example — free agent:**
+```json
+"payment": {
+  "model": "free"
+}
+```
 
 **Example — Nano-only agent using x402 exact scheme (inbound, with verification):**
 ```json
