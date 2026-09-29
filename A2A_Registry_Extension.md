@@ -167,7 +167,7 @@ Used by agents that accept payment for their services. Separates the **protocol*
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `model` | string | No | Payment model, could be one of **free**, **paid**, **freemium**. See values below. |
+| `model` | string | No | Payment model: `"free"` (no payment required), `"paid"` (payment required), `"freemium"` (free tier + paid tier). Defaults to `"paid"` if omitted and protocols/rails are present. **Recommended:** Always declare explicitly to avoid ambiguity. Free agents should declare `model: "free"` without protocols/rails. |
 | `protocols` | array of string | No | Payment negotiation protocols supported. See values below. |
 | `rails` | array of `PaymentRail` | No | Settlement rails accepted. Each entry is an object. |
 | `direction` | string | No | Whether this agent **receives** payment, **makes** payment, or both. Values: `"inbound"` (can be paid), `"outbound"` (can pay others), `"both"`. Defaults to `"inbound"` if omitted — preserving backward compatibility with all existing cards. Makes it possible to query "which agents can pay me" as well as "which agents can I pay". |
@@ -222,14 +222,26 @@ The list is open-ended — values not listed here are accepted by the registry a
 
 > **Note on pricing:** The `payment` object describes *settlement capability* — which protocols and rails this agent can receive payment on. It does not describe per-request pricing. In x402 and AP2, pricing is negotiated dynamically at invocation time via HTTP 402 response headers. Per-request pricing hints (e.g. `pricingModel: "pay-per-request"`) are a candidate for a future Phase 3 extension key.
 
-**Example — free agent:**
+#### Payment Model Validation Rules
+
+The registry applies the following validation logic (warnings, not errors):
+
+| Scenario | Validation | Recommendation |
+|----------|-----------|----------------|
+| `model: "free"` with protocols/rails | ⚠️ Warning | Free agents should not declare protocols/rails. Use `model: "freemium"` if offering a paid tier. |
+| `model: "paid"` without protocols/rails | ⚠️ Warning | Paid agents should declare at least one protocol and rail. |
+| `model: "freemium"` without protocols/rails | ⚠️ Warning | Freemium agents should declare protocols/rails for the paid tier (free tier is implicit). |
+| No `model` field, no protocols/rails | ℹ️ Info | Consider declaring `model: "free"` to make intent explicit. |
+| No `model` field, has protocols/rails | ✅ OK | Registry infers `model: "paid"` for backward compatibility. |
+
+**Example — Free agent (registry utility agents):**
 ```json
 "payment": {
   "model": "free"
 }
 ```
 
-**Example — Nano-only agent using x402 exact scheme (inbound, with verification):**
+**Example — Nano-only agent using x402 exact scheme (paid, inbound, with verification):**
 ```json
 "payment": {
   "direction": "inbound",
@@ -255,6 +267,7 @@ The list is open-ended — values not listed here are accepted by the registry a
 **Example — Multi-rail agent (x402 + Stripe, each on different rails) — demonstrating per-rail protocol binding:**
 ```json
 "payment": {
+  "model": "paid",
   "protocols": ["x402", "stripe"],
   "rails": [
     {
@@ -281,6 +294,7 @@ Without `protocol` on each rail, a query for `?payment_protocol=stripe&payment_r
 **Example — Solana USDC with chain disambiguation:**
 ```json
 "payment": {
+  "model": "paid",
   "protocols": ["x402", "ap2"],
   "rails": [
     {
