@@ -359,8 +359,9 @@ This replaces the informal `card.metadata.registryIdentityProvider/Identity/Pack
 
 ### v0.3 Cards with `card.metadata` (legacy)
 
-The registry **continues to support** the legacy `metadata` pattern for identity hints indefinitely:
+The registry **continues to support** the legacy `metadata` pattern for both identity and payment hints indefinitely:
 
+#### Identity Hints (v0.3 metadata)
 ```json
 "metadata": {
   "registryIdentityProvider": "github",
@@ -369,14 +370,74 @@ The registry **continues to support** the legacy `metadata` pattern for identity
 }
 ```
 
-- The scanner's `extractRegistryHintsFromCard()` will check `capabilities.extensions` first, then fall back to `card.metadata` for backward compatibility
+#### Payment Hints (v0.3 metadata) — NEW
+```json
+"metadata": {
+  "registryPaymentModel": "paid",
+  "registryPaymentDirection": "inbound",
+  "registryPaymentProtocols": "x402,ap2",
+  "registryPaymentRails": "eip155:8453:usdc,solana:mainnet:usdc"
+}
+```
+
+**v0.3 Payment Metadata Field Reference:**
+
+| Field | Type | Description |
+|---|---|---|
+| `registryPaymentModel` | string | Payment model: `"free"`, `"paid"`, or `"freemium"` |
+| `registryPaymentDirection` | string | Payment direction: `"inbound"`, `"outbound"`, or `"both"` |
+| `registryPaymentProtocols` | string | Comma-separated list of protocols (e.g. `"x402,stripe"`) |
+| `registryPaymentRails` | string | Comma-separated list of rails in CAIP-2 format (see below) |
+
+**CAIP-2 Rail Format:**
+- Full format: `namespace:chainId:asset` (e.g. `"eip155:8453:usdc"` for USDC on Base)
+- Partial format: `namespace:chainId` (e.g. `"eip155:8453"` for Base chain, any asset)
+- Legacy format: `network` only (e.g. `"nano"` for Nano XNO)
+
+This format matches the [x402 payment protocol specification](https://gist.github.com/seansilva-adam-bot/f62e35716f37bf9d9df0e441287500f5) (Coinbase/Cloudflare standard).
+
+**Example — v0.3 agent with payment metadata:**
+```json
+{
+  "protocolVersion": "0.3.0",
+  "name": "Legacy Paid Agent",
+  "metadata": {
+    "registryPaymentModel": "paid",
+    "registryPaymentDirection": "inbound",
+    "registryPaymentProtocols": "x402",
+    "registryPaymentRails": "nano,eip155:8453:usdc"
+  }
+}
+```
+
+This agent will be indexed with:
+- Model: `paid`
+- Direction: `inbound`
+- Protocols: `["x402"]`
+- Rails: `[{network: "nano"}, {network: "eip155:8453", token: "usdc"}]`
+
+**Limitations of v0.3 metadata:**
+- No per-rail `protocol` binding (can't express "x402 on base:USDC, stripe on USD")
+- No verification details (`verifyUrl`, `proof`, etc.)
+- No structured metadata (`feeModel`, `settlementTime`, `contractAddress`, etc.)
+- No `scheme` declaration for x402 rails (defaults to `"exact"`)
+
+For full payment features including verification and per-rail protocol binding, migrate to v1.0 extension format.
+
+- The scanner's `extractRegistryExtParams()` checks `capabilities.extensions` first, then falls back to `card.metadata` for backward compatibility
 - Agents on v0.3 format cards that cannot migrate immediately are not broken
-- The registry documentation will **strongly discourage** `card.metadata` for new v1.0 cards and direct agents to the extension instead
+- The registry documentation **strongly discourages** `card.metadata` for new v1.0 cards and directs agents to the extension instead
 
-### Priority order for identity hints
+### Priority order for extraction
 
+**Identity hints:**
 1. `capabilities.extensions[uri=registry/v1].params.identity` ← preferred for v1.0
 2. `card.metadata.registryIdentityProvider/Identity/PackageName` ← legacy fallback, still supported
+
+**Payment hints:**
+1. `capabilities.extensions[uri=registry/v1].params.payment` ← preferred for v1.0
+2. `card.metadata.registryPayment*` ← v0.3 fallback, still supported
+3. Root-level `card.payment*` ← legacy v0.2 fallback (if exists)
 
 ### v1.0 Cards
 
@@ -385,6 +446,7 @@ New agents publishing a v1.0 card should use the extension. The registry's `/too
 | Code | Severity | Condition | Message |
 |---|---|---|---|
 | `DEPRECATED_REGISTRY_METADATA` | Warning | v1.0 card has `card.metadata.registryIdentityProvider` | "Legacy metadata-based identity hints are deprecated in A2A v1.0. Migrate to `capabilities.extensions` with URI `https://a2a-registry.org/extensions/registry/v1`." |
+| `DEPRECATED_REGISTRY_PAYMENT_METADATA` | Warning | v1.0 card has `card.metadata.registryPayment*` | "v0.3 metadata-based payment hints are supported but deprecated. For full payment features, migrate to `capabilities.extensions` with URI `https://a2a-registry.org/extensions/registry/v1`." |
 | `REGISTRY_EXT_MUST_BE_OPTIONAL` | Error | Registry extension is declared with `required: true` | "The registry extension must be declared with `required: false`. Setting it required will cause general A2A clients to reject connections." |
 | `REGISTRY_EXT_IDENTITY_INVALID` | Error | `identity.packageName` does not start with `{provider}.{username}.` | "Package name must be namespaced under the declared identity: `github.{username}.*`" |
 | `REGISTRY_EXT_PAYMENT_RAIL_MISSING_NETWORK` | Warning | A `rails` entry has no `network` field | "Each payment rail entry must include a `network` field." |
