@@ -75,19 +75,48 @@ Retrieve detailed information about a specific agent.
 
 **GET** `/public/agents/resolve/:package_id`
 
-Quickly resolve an agent's package name to its core details.
+Resolve an agent's package name to its Agent Card. For an indexed A2A 1.0
+card, the response is the card object itself, with no registry response wrapper.
+Use `GET /public/agents/:id` for registry metadata such as the package name and
+verification details.
 
 **Path Parameters**:
 - `package_id` (string): The unique package name.
 
-**Response**:
+**Example response (A2A 1.0)**:
 ```json
 {
-  "package_name": "com.example.weather",
-  "manifest_url": "https://example.com/ai-plugin.json",
-  ...
+  "name": "Weather Bot",
+  "description": "Provides weather forecasts for a requested location.",
+  "supportedInterfaces": [
+    {
+      "url": "https://example.com/a2a",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ],
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "extendedAgentCard": false
+  },
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "weather_forecast",
+      "name": "Weather forecast",
+      "description": "Returns a forecast for a location.",
+      "tags": ["weather", "forecast"]
+    }
+  ]
 }
 ```
+
+Read connection details from the returned card's declared interfaces. A card
+may also declare `securitySchemes` and `securityRequirements`; public resolution
+does not grant credentials for the agent's endpoint.
 
 ### 5. Submit Agent (Public Ingest)
 
