@@ -251,7 +251,9 @@ function runTier3(card, findings) {
   if (Array.isArray(card.securityRequirements) && card.securityRequirements.length > 0) {
     const declared = card.securitySchemes ? Object.keys(card.securitySchemes) : [];
     for (const req of card.securityRequirements) {
-      for (const schemeName of Object.keys(req)) {
+      // Schema errors are reported separately; malformed requirements must not throw.
+      if (!req || typeof req.schemes !== 'object' || !req.schemes || Array.isArray(req.schemes)) continue;
+      for (const schemeName of Object.keys(req.schemes)) {
         if (!declared.includes(schemeName)) {
           findings.push({
             tier: 'tier3_discovery', severity: 'warning',
@@ -272,7 +274,8 @@ function runTier3(card, findings) {
     card.skills.forEach((skill, idx) => {
       if (Array.isArray(skill.securityRequirements)) {
         for (const req of skill.securityRequirements) {
-          for (const schemeName of Object.keys(req)) {
+          if (!req || typeof req.schemes !== 'object' || !req.schemes || Array.isArray(req.schemes)) continue;
+          for (const schemeName of Object.keys(req.schemes)) {
             if (!declared.includes(schemeName)) {
               findings.push({
                 tier: 'tier3_discovery', severity: 'warning',

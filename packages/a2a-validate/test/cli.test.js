@@ -135,7 +135,7 @@ const NO_EXAMPLES_CARD = {
 
 const SECURITY_MISMATCH_CARD = {
   ...VALID_CARD,
-  securityRequirements: [{ myApiScheme: [] }],
+  securityRequirements: [{ schemes: { myApiScheme: {} } }],
   // securitySchemes is absent — mismatch
 };
 

@@ -3,12 +3,144 @@
 /**
  * A2A Agent Card v1.0 JSON Schema (Draft 2020-12)
  * Canonical source: https://a2a-protocol.org/schemas/v1.0/agent-card.json
- * Kept in sync with backend/src/schemas/generated/v1_0/schema.json
+ * Security objects follow specification/a2a.proto at a2aproject/A2A
+ * fe182ee3c053d2e6a3ad2576c959fa5f7d8b5d07 and specification sections 4.5.1–4.5.10.
  */
 const A2A_V1_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   $id: 'https://a2a-protocol.org/schemas/v1.0/agent-card.json',
   title: 'A2A Agent Card v1.0',
+  $defs: {
+    StringList: {
+      type: 'object',
+      properties: { list: { type: 'array', items: { type: 'string' } } },
+      additionalProperties: false,
+    },
+    SecurityRequirement: {
+      type: 'object',
+      properties: {
+        schemes: {
+          type: 'object',
+          additionalProperties: { $ref: '#/$defs/StringList' },
+        },
+      },
+      additionalProperties: false,
+    },
+    SecurityScheme: {
+      type: 'object',
+      // The specification requires exactly one of these named union members.
+      minProperties: 1,
+      maxProperties: 1,
+      properties: {
+        apiKeySecurityScheme: {
+          type: 'object',
+          required: ['location', 'name'],
+          properties: {
+            description: { type: 'string' },
+            location: { type: 'string', enum: ['query', 'header', 'cookie'] },
+            name: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+        httpAuthSecurityScheme: {
+          type: 'object',
+          required: ['scheme'],
+          properties: {
+            description: { type: 'string' },
+            scheme: { type: 'string' },
+            bearerFormat: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+        oauth2SecurityScheme: {
+          type: 'object',
+          required: ['flows'],
+          properties: {
+            description: { type: 'string' },
+            flows: { $ref: '#/$defs/OAuthFlows' },
+            oauth2MetadataUrl: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+        openIdConnectSecurityScheme: {
+          type: 'object',
+          required: ['openIdConnectUrl'],
+          properties: {
+            description: { type: 'string' },
+            openIdConnectUrl: { type: 'string', format: 'uri' },
+          },
+          additionalProperties: false,
+        },
+        mtlsSecurityScheme: {
+          type: 'object',
+          properties: { description: { type: 'string' } },
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    },
+    OAuthScopes: { type: 'object', additionalProperties: { type: 'string' } },
+    OAuthFlows: {
+      type: 'object',
+      minProperties: 1,
+      maxProperties: 1,
+      properties: {
+        authorizationCode: {
+          type: 'object',
+          required: ['authorizationUrl', 'tokenUrl', 'scopes'],
+          properties: {
+            authorizationUrl: { type: 'string' },
+            tokenUrl: { type: 'string' },
+            refreshUrl: { type: 'string' },
+            scopes: { $ref: '#/$defs/OAuthScopes' },
+            pkceRequired: { type: 'boolean' },
+          },
+          additionalProperties: false,
+        },
+        clientCredentials: {
+          type: 'object',
+          required: ['tokenUrl', 'scopes'],
+          properties: {
+            tokenUrl: { type: 'string' },
+            refreshUrl: { type: 'string' },
+            scopes: { $ref: '#/$defs/OAuthScopes' },
+          },
+          additionalProperties: false,
+        },
+        // Deprecated flows remain representable; their proto fields are optional.
+        implicit: {
+          type: 'object',
+          properties: {
+            authorizationUrl: { type: 'string' },
+            refreshUrl: { type: 'string' },
+            scopes: { $ref: '#/$defs/OAuthScopes' },
+          },
+          additionalProperties: false,
+        },
+        password: {
+          type: 'object',
+          properties: {
+            tokenUrl: { type: 'string' },
+            refreshUrl: { type: 'string' },
+            scopes: { $ref: '#/$defs/OAuthScopes' },
+          },
+          additionalProperties: false,
+        },
+        deviceCode: {
+          type: 'object',
+          required: ['deviceAuthorizationUrl', 'tokenUrl', 'scopes'],
+          properties: {
+            deviceAuthorizationUrl: { type: 'string' },
+            tokenUrl: { type: 'string' },
+            refreshUrl: { type: 'string' },
+            scopes: { $ref: '#/$defs/OAuthScopes' },
+          },
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    },
+  },
   type: 'object',
   required: [
     'name',
@@ -94,10 +226,7 @@ const A2A_V1_SCHEMA = {
           outputModes: { type: 'array', items: { type: 'string' } },
           securityRequirements: {
             type: 'array',
-            items: {
-              type: 'object',
-              additionalProperties: { type: 'array', items: { type: 'string' } },
-            },
+            items: { $ref: '#/$defs/SecurityRequirement' },
           },
         },
         additionalProperties: false,
@@ -114,30 +243,11 @@ const A2A_V1_SCHEMA = {
     },
     securitySchemes: {
       type: 'object',
-      additionalProperties: {
-        type: 'object',
-        required: ['type'],
-        properties: {
-          type: {
-            type: 'string',
-            enum: ['apiKey', 'http', 'oauth2', 'openIdConnect', 'mutualTls'],
-          },
-          description: { type: 'string' },
-          name: { type: 'string' },
-          in: { type: 'string', enum: ['header', 'query', 'cookie'] },
-          scheme: { type: 'string' },
-          bearerFormat: { type: 'string' },
-          flows: { type: 'object' },
-          openIdConnectUrl: { type: 'string', format: 'uri' },
-        },
-      },
+      additionalProperties: { $ref: '#/$defs/SecurityScheme' },
     },
     securityRequirements: {
       type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: { type: 'array', items: { type: 'string' } },
-      },
+      items: { $ref: '#/$defs/SecurityRequirement' },
     },
     signatures: {
       type: 'array',
