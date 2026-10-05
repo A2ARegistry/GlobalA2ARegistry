@@ -797,4 +797,4 @@ async function validateUrl(targetUrl) {
   );
 }
 
-module.exports = { validateJson, validateUrl };
+module.exports = { validateJson, validateUrl, validateSchema };

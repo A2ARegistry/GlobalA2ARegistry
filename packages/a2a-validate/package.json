@@ -6,9 +6,14 @@
     "a2a-validate": "./bin/cli.js"
   },
   "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./cf": "./src/schema-only.js"
+  },
   "files": [
     "bin",
     "src",
+    "scripts",
     "README.md"
   ],
   "engines": {
@@ -26,6 +31,8 @@
   "author": "A2A Registry Contributors",
   "license": "Apache-2.0",
   "scripts": {
+    "build": "node scripts/compile-schema.mjs",
+    "prepublishOnly": "node scripts/compile-schema.mjs",
     "test": "node test/security.test.js && node test/cli.test.js"
   },
   "dependencies": {

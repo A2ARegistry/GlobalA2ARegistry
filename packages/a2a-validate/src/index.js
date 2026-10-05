@@ -1,14 +1,55 @@
 'use strict';
 
 /**
- * @a2a-registry/validate — Programmatic API
+ * @a2aregistry/validate — Programmatic API
  *
  * Fully self-contained: runs Tier 1–4 locally using Ajv + jose + json-canonicalize.
  * No registry API required. Works offline for JSON/file validation.
  * Live URL mode requires network access for Tier 2 probing.
+ *
+ * Low-level schema exports (for consumers that need the raw Ajv validator and
+ * schema object directly, e.g. a Cloudflare Worker backend):
+ *   - schema_v1_0         — raw JSON Schema object (A2A v1.0)
+ *   - validate_v1_0       — pre-compiled Ajv ValidateFunction
+ *   - A2A_SCHEMA_REGISTRY — map of version keys → { validate, schema }
+ *   - getA2AValidator     — helper that resolves the right entry by version string
  */
 
 const { validateJson, validateUrl } = require('./validator');
+const { A2A_V1_SCHEMA } = require('./schema');
+
+// ---------------------------------------------------------------------------
+// Low-level schema exports — for consumers (e.g. a Cloudflare Worker) that
+// need the compiled Ajv validator and raw schema object directly.
+// The Ajv instance is shared with validator.js (compiled once at require time).
+// ---------------------------------------------------------------------------
+
+// Re-export the raw JSON Schema object
+const schema_v1_0 = A2A_V1_SCHEMA;
+
+// Re-export the compiled Ajv ValidateFunction from the shared validator module
+// (validator.js compiles it at module load via ajv.compile(A2A_V1_SCHEMA))
+const { validateSchema: validate_v1_0 } = require('./validator');
+
+// Registry of all supported versions — keyed by both 'v1_0' and '1.0'
+const A2A_SCHEMA_REGISTRY = {
+  v1_0: { validate: validate_v1_0, schema: schema_v1_0 },
+  '1.0': { validate: validate_v1_0, schema: schema_v1_0 },
+};
+
+/**
+ * Resolve the Ajv validator entry for a given spec version string.
+ * Defaults to v1.0 if the version is unrecognised or omitted.
+ *
+ * @param {string} [version]  e.g. 'v1_0' or '1.0'
+ * @returns {{ validate: Function, schema: object }}
+ */
+function getA2AValidator(version) {
+  if (version && A2A_SCHEMA_REGISTRY[version]) {
+    return A2A_SCHEMA_REGISTRY[version];
+  }
+  return A2A_SCHEMA_REGISTRY['v1_0'];
+}
 
 /**
  * Validate an A2A v1.0 Agent Card.
@@ -49,8 +90,14 @@ async function validateManifest(target) {
 }
 
 module.exports = {
+  // High-level API
   validateManifest,
-  // Also export the lower-level helpers for callers that want explicit control
   validateJson,
   validateUrl,
+
+  // Low-level schema exports (for backend / Cloudflare Worker consumers)
+  schema_v1_0,
+  validate_v1_0,
+  A2A_SCHEMA_REGISTRY,
+  getA2AValidator,
 };

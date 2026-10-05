@@ -67,6 +67,10 @@ echo "  ✔ Version ${VERSION} not yet published"
 
 echo ""
 
+echo "▸ Running build (compile-schema)..."
+node scripts/compile-schema.mjs
+echo ""
+
 # ── 2. Test suite ─────────────────────────────────────────────────────────────
 
 echo "▸ Running test suite..."
