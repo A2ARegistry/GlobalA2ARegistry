@@ -202,26 +202,6 @@ function checkInterfaceUrls(card, findings) {
 // --------------------------------------------------------------------------
 
 function runTier3(card, findings) {
-  // Reverse-DNS package_name
-  if (card.package_name) {
-    if (/^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)+$/.test(card.package_name)) {
-      findings.push({
-        tier: 'tier3_discovery', severity: 'pass',
-        code: 'PACKAGE_NAME_VALID',
-        title: 'Reverse-DNS Package Name Valid',
-        message: `'${card.package_name}' follows global namespace conventions.`,
-      });
-    } else {
-      findings.push({
-        tier: 'tier3_discovery', severity: 'warning',
-        code: 'PACKAGE_NAME_NON_STANDARD',
-        title: 'Non-Standard Package Identifier',
-        message: `'${card.package_name}' should follow reverse-DNS convention (e.g. 'com.example.myagent').`,
-        field: 'package_name',
-      });
-    }
-  }
-
   // Skill example richness
   if (Array.isArray(card.skills)) {
     card.skills.forEach((skill, idx) => {
@@ -231,7 +211,7 @@ function runTier3(card, findings) {
           tier: 'tier3_discovery', severity: 'warning',
           code: 'SKILL_EXAMPLES_MISSING',
           title: `Skill [${skill.name || idx}] Has No Examples`,
-          message: `Skill '${skill.name || skill.id}' has 0 prompt examples. Adding 3–5 diverse variations boosts vector discovery hit-rates.`,
+          message: `Skill '${skill.name || skill.id}' has 0 prompt examples. Adding 3–5 diverse variations helps clients and agents understand when to invoke this skill.`,
           field: `skills[${idx}].examples`,
           suggestion: "Add natural-language queries that users would send to trigger this skill.",
         });
@@ -697,25 +677,6 @@ async function validateJson(rawInput) {
     cardData = rawInput;
   }
 
-  // Payload size (10KB registry guardrail)
-  const byteSize = Buffer.byteLength(rawString, 'utf8');
-  if (byteSize > 10240) {
-    findings.push({
-      tier: 'tier1_schema', severity: 'warning',
-      code: 'PAYLOAD_EXCEEDS_10KB',
-      title: 'Manifest Exceeds 10KB',
-      message: `Card is ${(byteSize / 1024).toFixed(1)}KB. The registry guardrail is 10KB.`,
-      suggestion: 'Trim long descriptions or move extended content to documentationUrl.',
-    });
-  } else {
-    findings.push({
-      tier: 'tier1_schema', severity: 'pass',
-      code: 'PAYLOAD_SIZE_OK',
-      title: 'Payload Size OK',
-      message: `Card payload is ${(byteSize / 1024).toFixed(1)}KB (within 10KB limit).`,
-    });
-  }
-
   // v0.3 detection (before schema validation so hints appear first)
   const v03Hints = detectV03Format(cardData);
   let specVersion = v03Hints.length > 0 ? 'v0.3' : 'v1.0';
@@ -755,7 +716,6 @@ async function validateJson(rawInput) {
 
   return buildReport(findings, valid && v03Hints.length === 0, specVersion, cardData, {
     isOffline: true,
-    contentLengthBytes: byteSize,
     signaturesVerified: verifiedSigs,
   });
 }

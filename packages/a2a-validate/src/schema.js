@@ -2,13 +2,18 @@
 
 /**
  * A2A Agent Card v1.0 JSON Schema (Draft 2020-12)
- * Canonical source: https://a2a-protocol.org/schemas/v1.0/agent-card.json
- * Security objects follow specification/a2a.proto at a2aproject/A2A
- * fe182ee3c053d2e6a3ad2576c959fa5f7d8b5d07 and specification sections 4.5.1–4.5.10.
+ *
+ * Implements the AgentCard structure defined in:
+ *   specification/a2a.proto @ a2aproject/A2A (fe182ee3c053d2e6a3ad2576c959fa5f7d8b5d07)
+ *   Specification sections 4.4 (Agent Discovery Objects) and 4.5 (Security Objects).
+ *
+ * This schema covers only fields defined in the A2A 1.0 protocol spec.
+ * Registry-specific extensions (package_name, category, target_audience, etc.)
+ * are intentionally excluded to keep this a pure protocol validator.
  */
 const A2A_V1_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
-  $id: 'https://a2a-protocol.org/schemas/v1.0/agent-card.json',
+  $id: 'https://a2a-registry.org/schemas/a2a/v1.0/agent-card.json',
   title: 'A2A Agent Card v1.0',
   $defs: {
     StringList: {
@@ -264,12 +269,6 @@ const A2A_V1_SCHEMA = {
     },
     iconUrl: { type: 'string' },
     documentationUrl: { type: 'string' },
-    package_name: {
-      type: 'string',
-      pattern: '^[a-zA-Z0-9_-]+(\\.[a-zA-Z0-9_-]+)+$',
-    },
-    category: { type: 'string' },
-    target_audience: { type: 'string' },
   },
   additionalProperties: false,
 };

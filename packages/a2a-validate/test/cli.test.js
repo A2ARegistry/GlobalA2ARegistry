@@ -72,7 +72,6 @@ const VALID_CARD = {
   name: 'Test Currency Agent',
   description: 'Provides real-time foreign exchange rates and currency conversion.',
   version: '1.0.0',
-  package_name: 'com.example.forex',
   provider: { organization: 'Example Corp', url: 'https://example.com' },
   supportedInterfaces: [
     { url: 'https://forex.example.com/a2a/v1', protocolBinding: 'JSONRPC', protocolVersion: '1.0' },
@@ -97,7 +96,6 @@ const VALID_CARD = {
 
 const MISSING_REQUIRED_CARD = {
   // Missing: name, description, version, supportedInterfaces, capabilities, defaultInputModes, defaultOutputModes, skills
-  package_name: 'com.example.broken',
 };
 
 const V03_LEGACY_CARD = {
@@ -139,12 +137,6 @@ const SECURITY_MISMATCH_CARD = {
   // securitySchemes is absent — mismatch
 };
 
-const OVERSIZED_CARD = (() => {
-  const card = JSON.parse(JSON.stringify(VALID_CARD));
-  // Pad description to exceed 10KB
-  card.description = 'A'.repeat(11000);
-  return card;
-})();
 
 // ── Test Sections ─────────────────────────────────────────────────────────────
 
@@ -221,11 +213,6 @@ async function runValidatorApiTests() {
     assert.ok(r.findings.some(f => f.code === 'SECURITY_SCHEME_UNDECLARED'));
   });
 
-  await test('Payload over 10KB triggers PAYLOAD_EXCEEDS_10KB warning', async () => {
-    const r = await validateJson(OVERSIZED_CARD);
-    assert.ok(r.findings.some(f => f.code === 'PAYLOAD_EXCEEDS_10KB'));
-  });
-
   await test('No JWS signatures produces SIGNATURES_ABSENT info (not an error)', async () => {
     const r = await validateJson(VALID_CARD);
     const sig = r.findings.find(f => f.code === 'SIGNATURES_ABSENT');
@@ -249,17 +236,6 @@ async function runValidatorApiTests() {
     const card = { ...VALID_CARD, _parts: [{ kind: 'text', text: 'hi' }] };
     const r = await validateJson(card);
     assert.ok(r.findings.some(f => f.code === 'V03_LEGACY_PART_KIND'));
-  });
-
-  await test('Package name reverse-DNS format is checked', async () => {
-    const r = await validateJson(VALID_CARD);
-    assert.ok(r.findings.some(f => f.code === 'PACKAGE_NAME_VALID'));
-  });
-
-  await test('Non-standard package_name triggers PACKAGE_NAME_NON_STANDARD warning', async () => {
-    const card = { ...VALID_CARD, package_name: 'myagent' }; // no dots
-    const r = await validateJson(card);
-    assert.ok(r.findings.some(f => f.code === 'PACKAGE_NAME_NON_STANDARD'));
   });
 
   await test('Valid documentationUrl is flagged as pass', async () => {
