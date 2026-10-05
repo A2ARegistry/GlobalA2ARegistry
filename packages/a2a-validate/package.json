@@ -8,7 +8,8 @@
   "main": "./src/index.js",
   "exports": {
     ".": "./src/index.js",
-    "./cf": "./src/schema-only.js"
+    "./cf": "./src/schema-only.js",
+    "./validator": "./src/validator.js"
   },
   "files": [
     "bin",

@@ -9,23 +9,41 @@
  *   Tier 3 — Discovery & semantic quality audit    (offline + live)
  *   Tier 4 — Cryptographic JWS trust verification  (offline + live)
  *
- * All tiers run locally in Node.js. No registry API is called.
+ * All tiers run locally. No registry API is called.
+ *
+ * Platform adapters (optional — passed as `config` to validateJson / validateUrl):
+ *
+ *   config.fetch(url, options?)
+ *     Called for Tier 2 live URL probing and JWKS fetching (Tier 4).
+ *     Must return a Promise resolving to:
+ *       { ok, status, statusText, headers: Headers-like, text: string,
+ *         error?: string, responseTimeMs: number }
+ *     Default: native globalThis.fetch (Node 18+).
+ *
+ *   config.resolveTxt(hostname)
+ *     Called for the Tier 4 DNS TXT ownership check.
+ *     Must return a Promise resolving to string[][] (same as node:dns/promises resolveTxt).
+ *     Default: lazy-required node:dns/promises (Node.js only).
+ *
+ * Cloudflare Workers usage:
+ *   Pass { fetch: myCfSafeFetch, resolveTxt: myCfDnsResolve } to avoid
+ *   Node.js-only APIs being bundled into the Worker.
  */
 
-const Ajv2020 = require('ajv/dist/2020');
-const addFormats = require('ajv-formats');
 const { flattenedVerify, importJWK } = require('jose');
 const canonicalize = require('json-canonicalize');
-const dns = require('node:dns/promises');
-const https = require('node:https');
-const { A2A_V1_SCHEMA } = require('./schema');
+
+// node:dns, node:https, Ajv and ajv-formats are NOT required here.
+// They are provided via config adapters so that edge runtimes (Cloudflare
+// Workers, Deno) that forbid eval() / new Function() never see them.
 
 // --------------------------------------------------------------------------
 // Ajv singleton — compiled once, reused across all validate() calls
 // --------------------------------------------------------------------------
-const ajv = new Ajv2020({ allErrors: true });
-addFormats(ajv); // registers uri, email, date-time, etc. (ajv-formats)
-const validateSchema = ajv.compile(A2A_V1_SCHEMA);
+// REMOVED: Ajv is no longer compiled at module level.
+// Callers must supply config.validateFn (pre-compiled or runtime-compiled).
+// Node.js callers get this from node-defaults.js; CF Workers get it from
+// validator-compiled.js via schema-only.js.
 
 // --------------------------------------------------------------------------
 // Public types (JSDoc only — this is plain JS)
@@ -44,16 +62,31 @@ const validateSchema = ajv.compile(A2A_V1_SCHEMA);
  * @property {string}   [suggestion]
  *
  * @typedef {Object} ValidationReport
- * @property {boolean}  isValid
- * @property {number}   readinessScore   0–100
- * @property {string}   grade            A+ | A | B | C | Needs Work
- * @property {string}   specVersionDetected
- * @property {any}      [cardData]
- * @property {string}   [targetUrl]
- * @property {boolean}  isOffline
+ * @property {boolean}   isValid
+ * @property {number}    readinessScore   0–100
+ * @property {string}    grade            A+ | A | B | C | Needs Work
+ * @property {string}    specVersionDetected
+ * @property {any}       [cardData]
+ * @property {string}    [targetUrl]
+ * @property {boolean}   isOffline
  * @property {Finding[]} findings
- * @property {Object}   summary
- * @property {Object}   [metadata]
+ * @property {Object}    summary
+ * @property {Object}    [metadata]
+ *
+ * @typedef {Object} ValidatorConfig
+ * @property {function} [validateFn]
+ *   (data: any) => boolean — pre-compiled (or runtime-compiled) Ajv validate function.
+ *   Must attach `.errors` on failure (same contract as Ajv ValidateFunction).
+ *   Node.js callers get this from node-defaults.js (compiled with Ajv at require time).
+ *   CF Workers get it from validator-compiled.js (zero-dependency standalone).
+ * @property {function} [fetch]
+ *   (url: string, options?: object) => Promise<{ok, status, statusText, headers, text, error?, responseTimeMs}>
+ *   Used for Tier 2 live URL probing and JWKS fetching (Tier 4).
+ *   Defaults to globalThis.fetch (Node 18+).
+ * @property {function} [resolveTxt]
+ *   (hostname: string) => Promise<string[][]>
+ *   Used for Tier 4 DNS TXT ownership verification.
+ *   Defaults to node:dns/promises resolveTxt (Node.js only).
  */
 
 // --------------------------------------------------------------------------
@@ -303,7 +336,42 @@ function base64UrlDecode(str) {
   return Buffer.from(b64, 'base64');
 }
 
-async function verifyJwsSignatures(card, findings) {
+/**
+ * Fetch a URL as text, using config.fetch if provided, else native globalThis.fetch.
+ * Returns the response body text.
+ * @param {string} url
+ * @param {number} timeoutMs
+ * @param {ValidatorConfig} config
+ * @returns {Promise<string>}
+ */
+async function httpGetText(url, timeoutMs, config) {
+  if (config && typeof config.fetch === 'function') {
+    // Use injected adapter (e.g. CF safeFetch)
+    const res = await config.fetch(url, { timeoutMs });
+    if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
+    return res.text;
+  }
+
+  // Default: native Node.js https.get (lazy require — never bundled into CF Workers)
+  const https = require('node:https'); // eslint-disable-line
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { timeout: timeoutMs }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error(`JWKS fetch timed out: ${url}`)); });
+  });
+}
+
+/**
+ * @param {any} card
+ * @param {Finding[]} findings
+ * @param {ValidatorConfig} config
+ */
+async function verifyJwsSignatures(card, findings, config) {
   if (!Array.isArray(card.signatures) || card.signatures.length === 0) {
     findings.push({
       tier: 'tier4_trust', severity: 'info',
@@ -336,18 +404,15 @@ async function verifyJwsSignatures(card, findings) {
   for (let i = 0; i < card.signatures.length; i++) {
     const sig = card.signatures[i];
     try {
-      // Decode JWS protected header
       const headerJson = JSON.parse(base64UrlDecode(sig.protected).toString('utf8'));
       const { alg, kid, jku, jwk: inlineJwk } = headerJson;
 
       let publicKey = null;
 
       if (inlineJwk) {
-        // Case A: inline JWK in protected header
         publicKey = await importJWK(inlineJwk, alg || 'ES256');
       } else if (jku) {
-        // Case B: fetch JWKS from URL
-        const jwksText = await httpGet(jku, 5000);
+        const jwksText = await httpGetText(jku, 5000, config);
         const jwks = JSON.parse(jwksText);
         if (Array.isArray(jwks.keys)) {
           const match = jwks.keys.find((k) => k.kid === kid) || jwks.keys[0];
@@ -365,7 +430,6 @@ async function verifyJwsSignatures(card, findings) {
         continue;
       }
 
-      // Verify with detached payload (A2A uses detached JWS)
       await flattenedVerify(
         { protected: sig.protected, signature: sig.signature, header: sig.header },
         publicKey,
@@ -392,32 +456,24 @@ async function verifyJwsSignatures(card, findings) {
   return verified;
 }
 
-/** Minimal HTTPS GET for JWKS fetching (no external deps). */
-function httpGet(url, timeoutMs = 5000) {
-  return new Promise((resolve, reject) => {
-    const req = https.get(url, { timeout: timeoutMs }, (res) => {
-      const chunks = [];
-      res.on('data', (c) => chunks.push(c));
-      res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-      res.on('error', reject);
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error(`JWKS fetch timed out: ${url}`)); });
-  });
-}
-
 // --------------------------------------------------------------------------
-// Tier 2 — live network probe (available in Node.js, no SSRF risk since
-// the CLI runs on the developer's own machine)
+// Tier 2 — live network probe
 // --------------------------------------------------------------------------
 
 /**
- * Fetches a URL and returns { ok, status, statusText, headers, text, responseTimeMs }.
- * Uses native fetch (Node 18+).
+ * Fetches a URL for Tier 2 probing.
+ * Uses config.fetch if provided, otherwise native globalThis.fetch (Node 18+).
+ * @param {string} url
+ * @param {ValidatorConfig} config
  */
-async function safeFetchNode(url, timeoutMs = 6000, maxBytes = 524288) {
+async function probeFetch(url, config) {
+  if (config && typeof config.fetch === 'function') {
+    return config.fetch(url, { timeoutMs: 6000, maxBytes: 524288 });
+  }
+
+  // Default: native fetch (Node 18+). Lazy — no top-level import needed.
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), 6000);
   const start = Date.now();
   try {
     const res = await fetch(url, {
@@ -430,10 +486,10 @@ async function safeFetchNode(url, timeoutMs = 6000, maxBytes = 524288) {
     });
     clearTimeout(timer);
 
-    // Stream with byte cap
     const reader = res.body?.getReader();
     let bytes = 0;
     const chunks = [];
+    const maxBytes = 524288;
     if (reader) {
       while (true) {
         const { done, value } = await reader.read();
@@ -466,7 +522,7 @@ async function safeFetchNode(url, timeoutMs = 6000, maxBytes = 524288) {
       statusText: isTimeout ? 'Request Timeout' : 'Fetch Error',
       headers: new Headers(),
       text: '',
-      error: isTimeout ? `Timed out after ${timeoutMs}ms` : e.message,
+      error: isTimeout ? `Timed out after 6000ms` : e.message,
       responseTimeMs: Date.now() - start,
     };
   }
@@ -492,7 +548,6 @@ function runTier2(fetchRes, urlObj, findings) {
     message: `Endpoint responded in ${fetchRes.responseTimeMs}ms.`,
   });
 
-  // HTTPS
   if (urlObj.protocol === 'https:') {
     findings.push({
       tier: 'tier2_network', severity: 'pass',
@@ -508,7 +563,6 @@ function runTier2(fetchRes, urlObj, findings) {
     });
   }
 
-  // MIME
   const ct = fetchRes.headers.get('content-type') || '';
   if (ct.includes('application/a2a+json')) {
     findings.push({
@@ -532,7 +586,6 @@ function runTier2(fetchRes, urlObj, findings) {
     });
   }
 
-  // CORS
   const corsOrigin = fetchRes.headers.get('access-control-allow-origin');
   if (corsOrigin) {
     findings.push({
@@ -549,7 +602,6 @@ function runTier2(fetchRes, urlObj, findings) {
     });
   }
 
-  // Latency
   if (fetchRes.responseTimeMs > 1500) {
     findings.push({
       tier: 'tier2_network', severity: 'warning',
@@ -559,11 +611,24 @@ function runTier2(fetchRes, urlObj, findings) {
   }
 }
 
-/** Tier 4 DNS TXT check. */
-async function checkDnsTxt(hostname, findings) {
+/**
+ * Tier 4 DNS TXT check.
+ * Uses config.resolveTxt if provided, otherwise lazy-requires node:dns/promises.
+ * @param {string} hostname
+ * @param {Finding[]} findings
+ * @param {ValidatorConfig} config
+ */
+async function checkDnsTxt(hostname, findings, config) {
   try {
-    const records = await dns.resolveTxt(`_a2a.${hostname}`);
-    if (records.length > 0) {
+    let records;
+    if (config && typeof config.resolveTxt === 'function') {
+      records = await config.resolveTxt(`_a2a.${hostname}`);
+    } else {
+      // Lazy require — never evaluated in CF Workers when an adapter is provided
+      const dns = require('node:dns/promises'); // eslint-disable-line
+      records = await dns.resolveTxt(`_a2a.${hostname}`);
+    }
+    if (records && records.length > 0) {
       findings.push({
         tier: 'tier4_trust', severity: 'pass',
         code: 'DNS_TXT_VERIFIED',
@@ -598,7 +663,7 @@ function buildReport(findings, isValid, specVersion, cardData, meta) {
       score -= 5;
     } else if (f.severity === 'pass') {
       passes++;
-      if (f.tier === 'tier4_trust') score += 5; // trust bonus
+      if (f.tier === 'tier4_trust') score += 5;
     }
   }
 
@@ -651,15 +716,13 @@ function buildReport(findings, isValid, specVersion, cardData, meta) {
  * Runs Tiers 1, 3, and 4 (offline). Tier 2 is skipped.
  *
  * @param {string|object} rawInput
+ * @param {ValidatorConfig} [config]  Optional platform adapters (fetch, resolveTxt).
  * @returns {Promise<ValidationReport>}
  */
-async function validateJson(rawInput) {
+async function validateJson(rawInput, config = {}) {
   const findings = [];
 
-  // Parse if string
   let cardData;
-  const rawString = typeof rawInput === 'string' ? rawInput : JSON.stringify(rawInput, null, 2);
-
   if (typeof rawInput === 'string') {
     try {
       cardData = JSON.parse(rawInput);
@@ -682,10 +745,23 @@ async function validateJson(rawInput) {
   let specVersion = v03Hints.length > 0 ? 'v0.3' : 'v1.0';
   findings.push(...v03Hints);
 
-  // Tier 1: Ajv schema validation (Draft 2020-12)
-  const valid = validateSchema(cardData);
-  if (!valid && validateSchema.errors) {
-    for (const err of validateSchema.errors) {
+  // Tier 1: Ajv schema validation
+  // config.validateFn is required — provided by node-defaults.js (Node.js) or
+  // schema-only.js / makeCfValidatorConfig() (CF Workers).
+  const validateFn = config.validateFn;
+  if (!validateFn) {
+    findings.push({
+      tier: 'tier1_schema', severity: 'error',
+      code: 'VALIDATOR_NOT_CONFIGURED',
+      title: 'No Schema Validator Provided',
+      message: 'config.validateFn is required. Pass a compiled Ajv ValidateFunction via config.',
+    });
+    return buildReport(findings, false, specVersion, cardData, { isOffline: true });
+  }
+
+  const valid = validateFn(cardData);
+  if (!valid && validateFn.errors) {
+    for (const err of validateFn.errors) {
       const field = err.instancePath || err.params?.missingProperty || 'root';
       findings.push({
         tier: 'tier1_schema', severity: 'error',
@@ -696,8 +772,7 @@ async function validateJson(rawInput) {
         suggestion: `Refer to the A2A v1.0 specification for field '${field}'.`,
       });
     }
-  } else if (valid) {
-    findings.push({
+  } else if (valid) {    findings.push({
       tier: 'tier1_schema', severity: 'pass',
       code: 'SCHEMA_VALID',
       title: 'A2A v1.0 Schema Conformance',
@@ -711,33 +786,30 @@ async function validateJson(rawInput) {
   // Tier 3: discovery & semantic quality
   runTier3(cardData, findings);
 
-  // Tier 4: JWS signatures (offline — verifies against inline jwk or fetches jku)
-  const verifiedSigs = await verifyJwsSignatures(cardData, findings);
+  // Tier 4: JWS signatures
+  const verifiedSigs = await verifyJwsSignatures(cardData, findings, config);
 
-  return buildReport(findings, valid && v03Hints.length === 0, specVersion, cardData, {
-    isOffline: true,
+  return buildReport(findings, valid && v03Hints.length === 0, specVersion, cardData, {    isOffline: true,
     signaturesVerified: verifiedSigs,
   });
 }
 
 /**
  * Fetch and validate a live Agent Card URL.
- * Runs all 4 tiers. Requires network access.
+ * Runs all 4 tiers.
  *
- * @param {string} targetUrl  https:// URL, base domain, or a2a:// ANS handle
+ * @param {string} targetUrl
+ * @param {ValidatorConfig} [config]  Optional platform adapters (fetch, resolveTxt).
  * @returns {Promise<ValidationReport>}
  */
-async function validateUrl(targetUrl) {
+async function validateUrl(targetUrl, config = {}) {
   const findings = [];
 
   let cleanUrl = targetUrl.trim();
-
-  // Normalise to https:// if bare domain
   if (!/^[a-zA-Z][a-zA-Z0-9+\-.]*:\/\//.test(cleanUrl)) {
     cleanUrl = 'https://' + cleanUrl;
   }
 
-  // Resolve to canonical .well-known path
   let urlObj;
   try {
     urlObj = new URL(cleanUrl);
@@ -755,11 +827,10 @@ async function validateUrl(targetUrl) {
     : `${urlObj.href.replace(/\/+$/, '')}/.well-known/agent-card.json`;
 
   // Tier 2: live network probe
-  const fetchRes = await safeFetchNode(probeUrl);
+  const fetchRes = await probeFetch(probeUrl, config);
   runTier2(fetchRes, new URL(probeUrl), findings);
 
   if (!fetchRes.ok) {
-    // Try to parse whatever came back for partial T1/T3 info
     let partial;
     if (fetchRes.text) { try { partial = JSON.parse(fetchRes.text); } catch { /* ignore */ } }
     return buildReport(findings, false, 'unknown', partial, {
@@ -769,14 +840,13 @@ async function validateUrl(targetUrl) {
   }
 
   // Tier 1 + 3 + 4 on the fetched content
-  const jsonReport = await validateJson(fetchRes.text);
+  const jsonReport = await validateJson(fetchRes.text, config);
   findings.push(...jsonReport.findings);
 
   // Tier 4: DNS TXT
   let dnsTxtFound = false;
   try {
-    const hostname = new URL(probeUrl).hostname;
-    dnsTxtFound = await checkDnsTxt(hostname, findings);
+    dnsTxtFound = await checkDnsTxt(new URL(probeUrl).hostname, findings, config);
   } catch { /* DNS check is best-effort */ }
 
   const ct = fetchRes.headers.get('content-type') || '';
@@ -797,4 +867,4 @@ async function validateUrl(targetUrl) {
   );
 }
 
-module.exports = { validateJson, validateUrl, validateSchema };
+module.exports = { validateJson, validateUrl };

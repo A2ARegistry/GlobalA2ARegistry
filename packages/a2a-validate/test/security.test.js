@@ -4,7 +4,7 @@
 // Contract: a2aproject/A2A specification/a2a.proto at
 // fe182ee3c053d2e6a3ad2576c959fa5f7d8b5d07, plus specification sections 4.5.1/4.5.7.
 const assert = require('node:assert/strict');
-const { validateJson } = require('../src/validator');
+const { validateJson } = require('../src/index');
 
 const BASE_CARD = {
   name: 'Security schema example',

@@ -28,7 +28,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { validateJson, validateUrl } = require('../src/validator');
+const { validateJson, validateUrl } = require('../src/index');
 
 // ─── helpers ──────────────────────────────────────────────────────────────
 

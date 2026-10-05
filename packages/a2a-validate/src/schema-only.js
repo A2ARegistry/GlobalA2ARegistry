@@ -39,9 +39,21 @@ function getA2AValidator(version) {
     return A2A_SCHEMA_REGISTRY['v1_0'];
 }
 
+/**
+ * CF Workers config — ready to pass to validateJson/validateUrl from the
+ * backend's validator.ts. Includes the pre-compiled standalone validateFn.
+ * Caller must still provide fetch and resolveTxt adapters.
+ *
+ * @type {{ validateFn: Function }}
+ */
+const cfConfig = {
+    validateFn: validate_v1_0,
+};
+
 module.exports = {
     schema_v1_0,
     validate_v1_0,
     A2A_SCHEMA_REGISTRY,
     getA2AValidator,
+    cfConfig,
 };

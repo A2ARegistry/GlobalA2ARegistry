@@ -16,7 +16,7 @@ const { tmpdir } = require('node:os');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 
-const { validateJson, validateUrl } = require('../src/validator');
+const { validateJson, validateUrl } = require('../src/index');
 const { validateManifest } = require('../src/index');
 
 const CLI = path.resolve(__dirname, '../bin/cli.js');
