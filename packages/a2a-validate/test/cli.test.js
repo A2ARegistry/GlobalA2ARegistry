@@ -10,8 +10,8 @@
  * Or:        npm test  (add "test": "node test/cli.test.js" to package.json scripts)
  */
 
-const { execSync } = require('node:child_process');
-const { writeFileSync, unlinkSync } = require('node:fs');
+const { execFileSync } = require('node:child_process');
+const { writeFileSync, unlinkSync, mkdtempSync, rmSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 const assert = require('node:assert/strict');
@@ -40,21 +40,27 @@ async function test(label, fn) {
   }
 }
 
+// Child CLI processes must not reach the network, including signature jku URLs.
+const guardRoot = mkdtempSync(path.join(tmpdir(), 'a2a-cli-guard-'));
+const guardFile = path.join(guardRoot, 'guard.cjs');
+writeFileSync(guardFile, `
+  const stop = () => { throw new Error('Offline test forbids network'); };
+  globalThis.fetch = stop;
+  require('node:https').get = stop;
+  require('node:http').get = stop;
+  require('node:dns/promises').resolveTxt = stop;
+  require('node:net').Socket.prototype.connect = stop;
+`);
+process.on('exit', () => rmSync(guardRoot, { recursive: true, force: true }));
 function cli(args, opts = {}) {
-  return execSync(`node "${CLI}" ${args}`, {
-    encoding: 'utf-8',
-    stdio: ['pipe', 'pipe', 'pipe'],
-    ...opts,
+  return execFileSync(process.execPath, ['--require', guardFile, CLI, ...args], {
+    encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], ...opts,
   });
 }
-
 function cliResult(args) {
-  try {
-    const stdout = execSync(`node "${CLI}" ${args} 2>/dev/null`, {
-      encoding: 'utf-8',
-    });
-    return { code: 0, stdout };
-  } catch (e) {
+  try { return { code: 0, stdout: cli(args), stderr: '' }; }
+  catch (e) {
+    if (e.error || e.code === 'EPERM' || e.status === null) throw e;
     return { code: e.status, stdout: e.stdout || '', stderr: e.stderr || '' };
   }
 }
@@ -307,12 +313,16 @@ async function runIndexApiTests() {
   });
 
   await test('https:// string routes to validateUrl (isOffline=false)', async () => {
-    // We can't actually hit a network in tests, but we can check the routing
-    // by passing a clearly invalid host and confirming Tier 2 fires
-    const r = await validateManifest('https://a2a-validate-nonexistent-host-12345.invalid');
-    assert.ok(!r.isOffline);
-    assert.ok(r.findings.some(f => f.tier === 'tier2_network' && f.severity === 'error'),
-      'Expected a Tier 2 network error for unreachable host');
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = async () => { calls++; throw new Error('Fabricated offline transport refusal'); };
+    try {
+      const r = await validateManifest('https://a2a-validate-nonexistent-host-12345.invalid');
+      assert.equal(calls, 1);
+      assert.ok(!r.isOffline);
+      assert.ok(r.findings.some(f => f.tier === 'tier2_network' && f.severity === 'error'),
+        'Expected a Tier 2 network error for fabricated unreachable host');
+    } finally { globalThis.fetch = originalFetch; }
   });
 }
 
@@ -322,33 +332,33 @@ async function runCliTests() {
   // ── Flag tests (no file needed) ────────────────────────────────────────
 
   await test('--help outputs usage text and exits 0', () => {
-    const out = cli('--help');
+    const out = cli(['--help']);
     assert.ok(out.includes('Usage: a2a-validate'), 'Missing "Usage: a2a-validate" in --help output');
     assert.ok(out.includes('--format=json'), 'Missing --format=json in --help output');
   });
 
   await test('-h flag works as alias for --help', () => {
-    const out = cli('-h');
+    const out = cli(['-h']);
     assert.ok(out.includes('Usage: a2a-validate'));
   });
 
   await test('--version outputs semver and exits 0', () => {
-    const v = cli('--version').trim();
+    const v = cli(['--version']).trim();
     assert.match(v, /^\d+\.\d+\.\d+$/, `Expected semver, got: '${v}'`);
   });
 
   await test('-v flag works as alias for --version', () => {
-    const v = cli('-v').trim();
+    const v = cli(['-v']).trim();
     assert.match(v, /^\d+\.\d+\.\d+$/);
   });
 
   await test('No arguments exits with code 2', () => {
-    const r = cliResult('');
+    const r = cliResult([]);
     assert.equal(r.code, 2, `Expected exit code 2, got ${r.code}`);
   });
 
   await test('Nonexistent file exits with code 2', () => {
-    const r = cliResult('"/tmp/this-file-does-not-exist-9999.json"');
+    const r = cliResult(['/tmp/this-file-does-not-exist-9999.json']);
     assert.equal(r.code, 2, `Expected exit code 2, got ${r.code}`);
   });
 
@@ -357,7 +367,7 @@ async function runCliTests() {
   await test('Valid card file exits 0', async () => {
     const file = writeTmp(VALID_CARD);
     try {
-      const r = cliResult(`"${file}"`);
+      const r = cliResult([file]);
       assert.equal(r.code, 0, `Expected exit 0, got ${r.code}. stderr: ${r.stderr}`);
     } finally {
       unlinkSync(file);
@@ -367,7 +377,7 @@ async function runCliTests() {
   await test('Valid card: human output contains grade', async () => {
     const file = writeTmp(VALID_CARD);
     try {
-      const r = cliResult(`"${file}" --no-color`);
+      const r = cliResult([file, '--no-color']);
       assert.ok(r.stdout.includes('Grade'), `Expected "Grade" in output, got: ${r.stdout.slice(0, 300)}`);
     } finally {
       unlinkSync(file);
@@ -377,7 +387,7 @@ async function runCliTests() {
   await test('Valid card --format=json outputs parseable JSON', async () => {
     const file = writeTmp(VALID_CARD);
     try {
-      const r = cliResult(`"${file}" --format=json`);
+      const r = cliResult([file, '--format=json']);
       assert.equal(r.code, 0, `Expected exit 0, got ${r.code}`);
       const report = JSON.parse(r.stdout);
       assert.ok(report.isValid, 'Expected isValid=true in JSON output');
@@ -393,7 +403,7 @@ async function runCliTests() {
   await test('Missing-required-fields card exits 1', async () => {
     const file = writeTmp(MISSING_REQUIRED_CARD);
     try {
-      const r = cliResult(`"${file}"`);
+      const r = cliResult([file]);
       assert.equal(r.code, 1, `Expected exit 1, got ${r.code}`);
     } finally {
       unlinkSync(file);
@@ -404,7 +414,7 @@ async function runCliTests() {
     const file = path.join(tmpdir(), `a2a_bad_${Date.now()}.json`);
     require('node:fs').writeFileSync(file, '{ broken json !!!', 'utf-8');
     try {
-      const r = cliResult(`"${file}"`);
+      const r = cliResult([file]);
       assert.equal(r.code, 1, `Expected exit 1, got ${r.code}`);
     } finally {
       unlinkSync(file);
@@ -417,7 +427,7 @@ async function runCliTests() {
     // NO_EXAMPLES_CARD has warnings but no errors
     const file = writeTmp(NO_EXAMPLES_CARD);
     try {
-      const r = cliResult(`"${file}"`);
+      const r = cliResult([file]);
       assert.equal(r.code, 0, `Expected exit 0 without --fail-on=warning, got ${r.code}`);
     } finally {
       unlinkSync(file);
@@ -427,7 +437,7 @@ async function runCliTests() {
   await test('Card with warnings exits 1 with --fail-on=warning', async () => {
     const file = writeTmp(NO_EXAMPLES_CARD);
     try {
-      const r = cliResult(`"${file}" --fail-on=warning`);
+      const r = cliResult([file, '--fail-on=warning']);
       assert.equal(r.code, 1, `Expected exit 1 with --fail-on=warning, got ${r.code}`);
     } finally {
       unlinkSync(file);
@@ -439,7 +449,7 @@ async function runCliTests() {
   await test('v0.3 card: JSON output specVersionDetected=v0.3', async () => {
     const file = writeTmp(V03_LEGACY_CARD);
     try {
-      const r = cliResult(`"${file}" --format=json`);
+      const r = cliResult([file, '--format=json']);
       const report = JSON.parse(r.stdout);
       assert.equal(report.specVersionDetected, 'v0.3');
     } finally {
@@ -452,7 +462,7 @@ async function runCliTests() {
   await test('--no-color suppresses ANSI escape sequences', async () => {
     const file = writeTmp(VALID_CARD);
     try {
-      const r = cliResult(`"${file}" --no-color`);
+      const r = cliResult([file, '--no-color']);
       assert.ok(!r.stdout.includes('\x1b['), `Expected no ANSI codes, found some in output`);
     } finally {
       unlinkSync(file);
@@ -464,7 +474,7 @@ async function runCliTests() {
   await test('gRPC bad URL: error in --format=json findings', async () => {
     const file = writeTmp(GRPC_BAD_URL_CARD);
     try {
-      const r = cliResult(`"${file}" --format=json`);
+      const r = cliResult([file, '--format=json']);
       const report = JSON.parse(r.stdout);
       assert.ok(
         report.findings.some(f => f.code === 'GRPC_INVALID_URL_SCHEME'),

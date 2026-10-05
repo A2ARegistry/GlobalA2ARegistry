@@ -46,6 +46,26 @@ a2a-validate ./agent-card.json --format=json
 a2a-validate https://my-agent.com --fail-on=warning
 ```
 
+Use `--help`/`-h` or `--version`/`-v` alone. Reports default to readable text;
+`--format=json` (or `--format json`) prints a JSON report. `--fail-on=error` is
+the default; `--fail-on=warning` fails on either warnings or errors. Output has
+no ANSI colors, and `--no-color` is accepted for scripts.
+
+Pass exactly one target. Unknown or repeated options are usage errors. A bare
+domain such as `example.com` is a **local filename**; only explicit `http://`,
+`https://` and `a2a://` targets select URL validation. Use `--` before filenames
+beginning with a dash. Embedded URL credentials are rejected.
+
+Exit codes are **0** for a report passing the chosen threshold, **1** for a
+validation error (including malformed JSON) or selected warning, and **2** for
+usage, file-read or unexpected evaluation failures. In JSON mode, usage and
+I/O failures return an `error` object on stdout.
+
+Unsigned local JSON validation needs no network or registry API. Signed cards
+may cause the existing library to fetch a JWS key from `jku`. Explicit URL mode
+uses the existing library's probes. `a2a://` is delegated to that same library;
+the CLI adds no ANS resolution and unsupported transport produces its report.
+
 ---
 
 ## Programmatic Usage (Node.js)
