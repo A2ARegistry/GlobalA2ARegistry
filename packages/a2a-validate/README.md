@@ -1,4 +1,4 @@
-# @a2a-registry/validate
+# @a2aregistry/validate
 
 CLI and library validator for the **Agent-to-Agent (A2A) Protocol v1.0** agent cards.
 
@@ -12,12 +12,12 @@ Validates pure A2A 1.0 protocol compliance — schema structure, security object
 
 Run directly with `npx` (zero installation required):
 ```bash
-npx @a2a-registry/validate https://my-agent.example.com
+npx @a2aregistry/validate https://my-agent.example.com
 ```
 
 Or install globally:
 ```bash
-npm install -g @a2a-registry/validate
+npm install -g @a2aregistry/validate
 ```
 
 ---
@@ -59,7 +59,7 @@ a2a-validate https://my-agent.com --fail-on=warning
 ## Programmatic usage (Node.js)
 
 ```javascript
-const { validateManifest } = require('@a2a-registry/validate');
+const { validateManifest } = require('@a2aregistry/validate');
 
 // Offline — from object or JSON string
 const report = await validateManifest({ name: 'My Agent', ... });
@@ -78,7 +78,7 @@ console.log(`Valid: ${report.isValid}`);
 ### Lower-level API
 
 ```javascript
-const { validateJson, validateUrl } = require('@a2a-registry/validate');
+const { validateJson, validateUrl } = require('@a2aregistry/validate');
 
 // Explicit offline validation
 const report = await validateJson(jsonStringOrObject);
