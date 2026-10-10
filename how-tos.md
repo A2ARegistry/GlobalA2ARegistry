@@ -204,7 +204,7 @@ The registry provides a validator tool to check your agent card for errors and w
 | Code | Type | Description | Fix |
 |---|---|---|---|
 | `REGISTRY_EXT_MUST_BE_OPTIONAL` | Error | Registry extension has `required: true` | Set `required: false` |
-| `REGISTRY_EXT_IDENTITY_INVALID` | Error | Package name doesn't match identity | Ensure `packageName` starts with `github.<username>.` |
+| `REGISTRY_EXT_IDENTITY_INVALID` | Error | Missing identity fields or packageName | Ensure provider, identity (username/domain), and packageName are provided |
 | `REGISTRY_EXT_PAYMENT_RAIL_MISSING_NETWORK` | Warning | Payment rail missing `network` field | Add `network` field to each rail |
 | `DEPRECATED_REGISTRY_METADATA` | Warning | Using v0.3 metadata pattern | Migrate to v1.0 extension (see [Migration Guide](./migration-v03-to-v10.md)) |
 

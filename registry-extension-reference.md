@@ -340,7 +340,7 @@ The registry validator checks for common issues:
 | Code | Severity | Message |
 |---|---|---|
 | `REGISTRY_EXT_MUST_BE_OPTIONAL` | Error | Extension must have `required: false` |
-| `REGISTRY_EXT_IDENTITY_INVALID` | Error | Identity `packageName` must start with `github.<username>.` |
+| `REGISTRY_EXT_IDENTITY_INVALID` | Error | Identity provider requires valid username/domain and packageName |
 | `REGISTRY_EXT_PAYMENT_RAIL_MISSING_NETWORK` | Warning | Each payment rail must include a `network` field |
 
 Warnings are non-blocking but help catch common mistakes. Use the [Validator](/tools/validator) to check your agent card.
