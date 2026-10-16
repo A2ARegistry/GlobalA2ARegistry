@@ -31,7 +31,7 @@
  */
 
 const { flattenedVerify, importJWK } = require('jose');
-const canonicalize = require('json-canonicalize');
+const { canonicalize } = require('json-canonicalize');
 
 // node:dns, node:https, Ajv and ajv-formats are NOT required here.
 // They are provided via config adapters so that edge runtimes (Cloudflare
@@ -333,7 +333,12 @@ function runTier3(card, findings) {
 function base64UrlDecode(str) {
   let b64 = str.replace(/-/g, '+').replace(/_/g, '/');
   while (b64.length % 4) b64 += '=';
-  return Buffer.from(b64, 'base64');
+  // Use atob + Uint8Array instead of Buffer.from() so this runs in
+  // Cloudflare Workers and other edge runtimes that have no Buffer global.
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
 }
 
 /**
@@ -388,7 +393,7 @@ async function verifyJwsSignatures(card, findings, config) {
 
   let canonicalPayload;
   try {
-    canonicalPayload = Buffer.from(canonicalize(cardWithoutSigs), 'utf8');
+    canonicalPayload = new TextEncoder().encode(canonicalize(cardWithoutSigs));
   } catch (e) {
     findings.push({
       tier: 'tier4_trust', severity: 'error',
@@ -404,7 +409,7 @@ async function verifyJwsSignatures(card, findings, config) {
   for (let i = 0; i < card.signatures.length; i++) {
     const sig = card.signatures[i];
     try {
-      const headerJson = JSON.parse(base64UrlDecode(sig.protected).toString('utf8'));
+      const headerJson = JSON.parse(new TextDecoder().decode(base64UrlDecode(sig.protected)));
       const { alg, kid, jku, jwk: inlineJwk } = headerJson;
 
       let publicKey = null;
@@ -430,11 +435,43 @@ async function verifyJwsSignatures(card, findings, config) {
         continue;
       }
 
-      await flattenedVerify(
-        { protected: sig.protected, signature: sig.signature, header: sig.header },
-        publicKey,
-        { detachedPayload: canonicalPayload }
-      );
+      // RFC 7515 supports two forms:
+      //   Inline payload:   sig.payload is a base64url string → standard JWS, no detachedPayload
+      //   Detached payload: sig.payload absent/empty → RFC 7797 detached, pass canonicalPayload
+      // Try inline first (publisher encoded the JCS canonical bytes as the payload field).
+      // Fall back to detached if inline fails or payload is absent.
+      const hasInlinePayload = typeof sig.payload === 'string' && sig.payload.length > 0;
+      const jwsObj = {
+        protected: sig.protected,
+        signature: sig.signature,
+        payload: hasInlinePayload ? sig.payload : '',
+      };
+      const verifyOpts = hasInlinePayload ? {} : { detachedPayload: canonicalPayload };
+      let verifyError = null;
+      try {
+        await flattenedVerify(jwsObj, publicKey, verifyOpts);
+      } catch (e1) {
+        if (hasInlinePayload) {
+          // Inline failed; try detached as a fallback
+          try {
+            await flattenedVerify({ ...jwsObj, payload: '' }, publicKey, { detachedPayload: canonicalPayload });
+            verifyError = null;
+          } catch (e2) {
+            verifyError = e1; // report the original inline error
+          }
+        } else {
+          // Detached failed; try inline with canonical as payload
+          const b64payload = btoa(String.fromCharCode(...canonicalPayload))
+            .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+          try {
+            await flattenedVerify({ ...jwsObj, payload: b64payload }, publicKey, {});
+            verifyError = null;
+          } catch (e2) {
+            verifyError = e1; // report the original detached error
+          }
+        }
+      }
+      if (verifyError) throw verifyError;
 
       verified++;
       findings.push({

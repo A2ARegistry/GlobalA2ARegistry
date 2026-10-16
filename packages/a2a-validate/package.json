@@ -1,6 +1,6 @@
 {
   "name": "@a2aregistry/validate",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "CLI and library validator for Agent-to-Agent (A2A) Protocol v1.0 agent cards. Pure protocol compliance — no registry-specific logic. Runs fully offline.",
   "bin": {
     "a2a-validate": "./bin/cli.js"

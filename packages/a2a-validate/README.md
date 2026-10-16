@@ -1,6 +1,6 @@
 # @a2aregistry/validate
 
-CLI and library validator for the **Agent-to-Agent (A2A) Protocol v1.0** agent cards.
+CLI and library validator for the **Agent-to-Agent (A2A) Protocol v1.0** agent cards. This is a free utility tool provided  by the [Global A2A Registry](https://www.a2a-registry.org), visit the website for the portal version.
 
 Validates pure A2A 1.0 protocol compliance — schema structure, security objects, interface URLs, JWS signatures, and semantic quality hints. Runs fully offline for local files; live URL mode adds network and TLS checks.
 
