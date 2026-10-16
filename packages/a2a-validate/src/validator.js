@@ -235,6 +235,32 @@ function checkInterfaceUrls(card, findings) {
 // --------------------------------------------------------------------------
 
 function runTier3(card, findings) {
+  // Skill count advisory
+  // The A2A spec sets no hard limit, but high skill counts hurt router agents:
+  // semantic overlap across many declared capabilities increases embedding distance
+  // noise, causing routing drift and false-positive matches. Mixed-domain skills
+  // also violate single-responsibility, making agents harder to maintain and secure.
+  // Recommended range: 3–7 focused skills. Warn at >10, advisory at >=7.
+  const skillCount = Array.isArray(card.skills) ? card.skills.length : 0;
+  if (skillCount > 10) {
+    findings.push({
+      tier: 'tier3_discovery', severity: 'warning',
+      code: 'SKILL_COUNT_HIGH',
+      title: `High Skill Count (${skillCount} skills)`,
+      message: `This card declares ${skillCount} skills. High skill counts cause semantic dilution: router and orchestrator agents must resolve embedding distances across all declared capabilities, which increases routing drift and false-positive matches. The recommended range is 3–7 focused skills per agent card.`,
+      field: 'skills',
+      suggestion: 'Group related skills into fewer higher-level capabilities, or split into multiple focused agent cards coordinated by an orchestrator.',
+    });
+  } else if (skillCount >= 7) {
+    findings.push({
+      tier: 'tier3_discovery', severity: 'info',
+      code: 'SKILL_COUNT_ELEVATED',
+      title: `Elevated Skill Count (${skillCount} skills)`,
+      message: `This card declares ${skillCount} skills. Consider whether all skills share a coherent domain. The recommended range is 3–7 focused skills.`,
+      field: 'skills',
+    });
+  }
+
   // Skill example richness
   if (Array.isArray(card.skills)) {
     card.skills.forEach((skill, idx) => {
@@ -323,6 +349,24 @@ function runTier3(card, findings) {
         field: 'documentationUrl',
       });
     }
+  }
+
+  // Payload size advisory
+  // Agent cards are loaded by orchestrators and injected into LLM context windows to make
+  // routing and invocation decisions. A large card bloats latency, inflates token costs,
+  // and degrades the calling model's reasoning capacity with irrelevant content.
+  // 32KB is a general advisory threshold; individual registries may enforce stricter limits.
+  const cardJson = JSON.stringify(card);
+  const byteSize = new TextEncoder().encode(cardJson).length;
+  if (byteSize > 32768) {
+    findings.push({
+      tier: 'tier3_discovery', severity: 'warning',
+      code: 'PAYLOAD_LARGE',
+      title: `Large Card Payload (${(byteSize / 1024).toFixed(1)}KB)`,
+      message: `Card payload is ${(byteSize / 1024).toFixed(1)}KB. Large agent cards increase LLM context costs for every orchestrator that loads this card and may exceed embedding limits in vector search systems. Consider trimming verbose descriptions, reducing skill count, or linking out to a documentationUrl instead of inlining long content.`,
+      field: 'skills',
+      suggestion: 'Target under 10KB for registry use. Prune redundant descriptions, shorten skill examples, and use documentationUrl for extended documentation.',
+    });
   }
 }
 
