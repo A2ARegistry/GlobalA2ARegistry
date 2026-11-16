@@ -32,6 +32,7 @@
 
 const { flattenedVerify, importJWK } = require('jose');
 const { canonicalize } = require('json-canonicalize');
+const { CHECK_NAME: AGENT_DIRECTED_TEXT, checkAgentDirectedText } = require('./agent-directed-text');
 
 // node:dns, node:https, Ajv and ajv-formats are NOT required here.
 // They are provided via config adapters so that edge runtimes (Cloudflare
@@ -87,6 +88,9 @@ const { canonicalize } = require('json-canonicalize');
  *   (hostname: string) => Promise<string[][]>
  *   Used for Tier 4 DNS TXT ownership verification.
  *   Defaults to node:dns/promises resolveTxt (Node.js only).
+ * @property {string[]} [checks]
+ *   Opt-in checks to run in addition to the default tiers.
+ *   Supported: 'agent-directed-text' (Tier 3, warnings only). Unknown names are ignored.
  */
 
 // --------------------------------------------------------------------------
@@ -866,6 +870,11 @@ async function validateJson(rawInput, config = {}) {
 
   // Tier 3: discovery & semantic quality
   runTier3(cardData, findings);
+
+  // Tier 3 opt-in: agent-directed text in free-text fields
+  if (Array.isArray(config.checks) && config.checks.includes(AGENT_DIRECTED_TEXT)) {
+    findings.push(...checkAgentDirectedText(cardData));
+  }
 
   // Tier 4: JWS signatures
   const verifiedSigs = await verifyJwsSignatures(cardData, findings, config);

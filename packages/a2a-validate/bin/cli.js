@@ -16,6 +16,8 @@
  *   --format=json       Output full structured JSON report to stdout
  *   --fail-on=warning   Exit 1 on any warning or error (default: exit 1 on error only)
  *   --fail-on=error     Exit 1 only on errors (default)
+ *   --check=<name>      Run an opt-in check (repeatable or comma-separated):
+ *                         agent-directed-text   warn on text addressed to reading agents
  *   --no-color          Disable ANSI colour output
  *   --help, -h          Show this help message
  *   --version, -v       Print version and exit
@@ -29,10 +31,12 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { validateJson, validateUrl } = require('../src/index');
+const { CHECK_NAME: AGENT_DIRECTED_TEXT } = require('../src/agent-directed-text');
 
 // ─── helpers ──────────────────────────────────────────────────────────────
 
 const VERSION = '1.2.0';
+const OPT_IN_CHECKS = [AGENT_DIRECTED_TEXT];
 
 function printUsage() {
   process.stdout.write(`
@@ -45,6 +49,8 @@ Options:
   --format=json       Output structured JSON report to stdout
   --fail-on=warning   Exit 1 on warnings or errors  (default: errors only)
   --fail-on=error     Exit 1 on errors only          (default)
+  --check=<name>      Run an opt-in check (repeatable or comma-separated):
+                        agent-directed-text   warn on text addressed to reading agents
   --no-color          Disable ANSI colour in human-readable output
   --help, -h          Show this help message
   --version, -v       Print version and exit
@@ -54,6 +60,7 @@ Examples:
   a2a-validate https://my-agent.example.com
   a2a-validate a2a://my-agent.godaddy.com --format=json
   a2a-validate ./agent-card.json --fail-on=warning
+  a2a-validate ./agent-card.json --check=agent-directed-text
 `);
 }
 
@@ -181,6 +188,18 @@ async function main() {
   const isJsonFormat  = rawArgs.includes('--format=json');
   const failOnWarning = rawArgs.includes('--fail-on=warning');
 
+  const checks = rawArgs
+    .filter((a) => a.startsWith('--check='))
+    .flatMap((a) => a.slice('--check='.length).split(','))
+    .map((c) => c.trim())
+    .filter(Boolean);
+  const unknownCheck = checks.find((c) => !OPT_IN_CHECKS.includes(c));
+  if (unknownCheck) {
+    process.stderr.write(`Error: Unknown check '${unknownCheck}'. Available: ${OPT_IN_CHECKS.join(', ')}\n`);
+    process.exit(2);
+  }
+  const config = { checks };
+
   // First positional arg is the target
   const target = rawArgs.find((a) => !a.startsWith('-'));
   if (!target) {
@@ -202,7 +221,7 @@ async function main() {
     if (!isJsonFormat) {
       process.stderr.write(`${C.dim()}Probing ${target} …${C.reset()}\n`);
     }
-    report = await validateUrl(target);
+    report = await validateUrl(target, config);
 
   } else {
     // Local file — offline, Tiers 1, 3, 4
@@ -225,7 +244,7 @@ async function main() {
       process.stderr.write(`${C.dim()}Validating ${resolved} (offline) …${C.reset()}\n`);
     }
 
-    report = await validateJson(rawContent);
+    report = await validateJson(rawContent, config);
   }
 
   // ── Output ────────────────────────────────────────────────────────────────

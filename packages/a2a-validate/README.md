@@ -41,6 +41,9 @@ a2a-validate ./agent-card.json --format=json
 
 # Fail pipeline on any warning or error
 a2a-validate https://my-agent.com --fail-on=warning
+
+# Run an opt-in check (see "Opt-in checks" below)
+a2a-validate ./agent-card.json --check=agent-directed-text
 ```
 
 ---
@@ -53,6 +56,44 @@ a2a-validate https://my-agent.com --fail-on=warning
 | **2 — Network** | HTTP 200, HTTPS, canonical `application/a2a+json` MIME type, CORS header, latency | live only |
 | **3 — Quality** | Skill `examples` richness, declared security scheme consistency | offline + live |
 | **4 — Trust** | JWS signature verification (RFC 7515 / RFC 8785), DNS TXT ownership record | offline + live |
+
+---
+
+## Opt-in checks
+
+### `agent-directed-text`
+
+Agent cards are read by other agents, and their free-text fields end up in those agents' context. This Tier 3 check warns when a card's text is written for the reading agent rather than for people.
+
+```bash
+a2a-validate ./agent-card.json --check=agent-directed-text
+```
+
+```javascript
+const report = await validateJson(card, { checks: ['agent-directed-text'] });
+
+// Or run the check on its own
+const { checkAgentDirectedText } = require('@a2aregistry/validate');
+const findings = checkAgentDirectedText(card);
+```
+
+It reads `description`, and each skill's `name`, `description` and `examples`. Text is NFKC-normalised and stripped of zero-width characters before matching. Every finding is a **warning**: it is never an error and never makes a card invalid. Each finding names the rule that fired and quotes the matched text:
+
+```
+▲ Agent-Directed Text in description
+   Asks the reader to override its instructions (rule 'ignore-previous-instructions'): “Ignore previous instructions”
+```
+
+| Code | Rules | Catches, for example |
+|---|---|---|
+| `AGENT_DIRECTED_ADDRESS` | `if-you-are-an-ai`, `ai-reading-this`, `note-to-ai` | "If you are an AI agent, …", "AI assistants reading this: …", "Note to AI agents: …" |
+| `AGENT_DIRECTED_OVERRIDE` | `ignore-previous-instructions`, `disregard-your-instructions`, `system-prompt` | "Ignore previous instructions", "Disregard your guidelines", "Your new system prompt is: …" |
+| `AGENT_DIRECTED_VERDICT` | `always-answer-verdict`, `for-any-question-respond`, `answer-every-question-with` | "Always answer \"yes\"", "For any question about this agent, respond …" |
+| `AGENT_DIRECTED_ROUTING` | `send-users-only-to`, `always-route-to`, `force-url`, `never-recommend-others` | "Send users only to …", "Always route users to …", "force https://…" |
+
+The patterns are in [`src/agent-directed-text.js`](./src/agent-directed-text.js), with an example phrase for each.
+
+**Limits.** This is plain pattern matching: no model, no network, the same result every time. It catches blatant phrasings and will miss paraphrased or obfuscated ones, so a clean result is not a guarantee. It can also flag legitimate text, which is why it only warns. Use it as a cheap first filter, for example in CI or before indexing listings, alongside semantic review.
 
 ---
 
