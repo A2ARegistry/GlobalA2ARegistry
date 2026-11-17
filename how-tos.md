@@ -226,6 +226,121 @@ The registry provides a validator tool to check your agent card for errors and w
 
 ---
 
+### How to Refresh Your Agent
+
+When you update your agent card (new version, changed description, added payment info, etc.), the
+registry does **not** automatically detect the change in real time. The card is cached after ingestion
+and refreshed on a nightly background cycle. If you need your changes reflected sooner, use one of
+the methods below.
+
+> [!NOTE]
+> The registry fetches your live agent card from its source URL and only updates the stored record
+> when the content has actually changed (hash-gated). If the URL is unchanged and the file
+> still has the same content, "refresh" is a no-op by design.
+>
+> **Freshness indicator:** `lastCheckedAt` (or `last_checked_at`) is the only authoritative signal
+> showing when the registry last performed an HTTP fetch of your live manifest. Fields like
+> `updatedAt` and `lastSuggestedAt` update when searches or metadata change and do not indicate a card fetch.
+
+---
+
+#### Method 1 — Agent Management Page (Recommended for most users)
+
+The quickest way for claimed-agent owners:
+
+1. Go to [Console → My Agents](https://www.a2a-registry.org/console/agents).
+2. Click on the agent you updated.
+3. On the agent detail panel, click **Refresh** (↻).
+4. The registry immediately re-fetches your agent card and updates all indexed fields.
+
+> **Rate limit:** Manual refresh is capped at **once per 60 seconds** per agent to prevent abuse.
+> If you hit the limit, wait a moment and try again.
+
+---
+
+#### Method 2 — API (for automation & CI/CD pipelines)
+
+If you deploy your agent automatically (e.g., via GitHub Actions, cloudflared tunnels, or `ngrok`),
+you can trigger a refresh programmatically using your API token.
+
+**Token-authenticated refresh:**
+
+```bash
+curl -X POST https://api.a2a-registry.org/api/agents/{AGENT_ID_OR_PACKAGE_NAME}/refresh-token \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+| Parameter | Description |
+|---|---|
+| `AGENT_ID_OR_PACKAGE_NAME` | Your agent's UUID or package name (e.g., `com.example.myagent`) |
+| `Authorization` | `Bearer <token>` — generate tokens at [Console → API Tokens](https://www.a2a-registry.org/console/tokens) |
+
+The token must belong to the same organization that owns the agent.
+
+**Example — GitHub Actions post-deploy hook:**
+
+```yaml
+- name: Notify registry of updated agent card
+  run: |
+    curl -X POST \
+      https://api.a2a-registry.org/api/agents/${{ secrets.AGENT_PACKAGE_NAME }}/refresh-token \
+      -H "Authorization: Bearer ${{ secrets.A2A_API_TOKEN }}"
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "changed": true,
+  "message": "Agent refreshed successfully."
+}
+```
+
+If `changed` is `false`, the live card content matched the cached version — nothing to update.
+
+---
+
+#### Method 3 — Public Re-Submit / Rescan (Unclaimed Listings Only)
+
+For listings that have **not** yet been claimed into an organisation:
+
+- **Web:** Go to [Submit Agent](https://www.a2a-registry.org/submit), enter the same agent card URL, and click **Submit**.
+- **API:** Send a POST request to `https://api.a2a-registry.org/public/ingest/rescan` with `{"package_name": "..."}`.
+
+> [!WARNING]
+> **Claimed agents cannot be refreshed via public re-submission or rescan.**
+> For claimed listings, public re-submission is intentionally ignored (`status: "exists", refreshed: false`)
+> to prevent unauthorized public callers from triggering re-crawls or overwriting owner-managed listings.
+> If your agent is claimed, you must use Method 1 (Console) or Method 2 (API Token).
+
+---
+
+#### Method 4 — Automatic Scheduled Background Refresh
+
+Even if you do nothing, the registry runs background sync jobs triggered nightly at **02:00 UTC**:
+
+- **Healthy agents:** Re-crawled every **7 days**.
+- **Failing agents (error / 404):** Rechecked every **24 hours**.
+- **Dynamic agents:** Rechecked every **6 hours**.
+
+If you bump your agent card version and need changes reflected immediately, use Method 1 (Console) or Method 2 (API Token) rather than waiting for the 7-day background cycle.
+
+---
+
+#### Common Refresh Issues
+
+| Symptom | Likely Cause | Fix |
+|---|---|---|
+| Re-submitted on `/submit`, but card and `lastCheckedAt` didn't change | The agent is claimed; public re-submit is a no-op for claimed agents | Log in and refresh from [Console → My Agents](https://www.a2a-registry.org/console/agents) or call `/api/agents/:id/refresh-token` |
+| 404 Not Found on API refresh | Missing `/api/` prefix in URL | Ensure URL is `https://api.a2a-registry.org/api/agents/{ID_OR_PKG}/refresh-token` |
+| Card shows old version after refresh | URL still serves the old file (CDN cache) | Purge your CDN/hosting cache first, then refresh |
+| `changed: false` after updating card | Content hash is identical | Ensure your updated card file is actually being served at the URL |
+| Refresh button disabled / rate-limit error (429) | Refreshed less than 60 seconds ago | Wait 60 seconds and try again |
+| Payment info not showing after refresh | Payment fields not in `capabilities.extensions` | Validate your card at the [Validator](https://www.a2a-registry.org/tools/validator) |
+
+---
+
 #### Option B — Organisation with a Verified Domain
 
 Use this for business/team accounts deploying under their own domain.

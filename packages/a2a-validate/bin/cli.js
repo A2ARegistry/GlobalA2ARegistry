@@ -188,11 +188,28 @@ async function main() {
   const isJsonFormat  = rawArgs.includes('--format=json');
   const failOnWarning = rawArgs.includes('--fail-on=warning');
 
-  const checks = rawArgs
-    .filter((a) => a.startsWith('--check='))
-    .flatMap((a) => a.slice('--check='.length).split(','))
-    .map((c) => c.trim())
-    .filter(Boolean);
+  const checks = [];
+  const consumedIndices = new Set();
+  for (let i = 0; i < rawArgs.length; i++) {
+    const arg = rawArgs[i];
+    if (arg === '--check') {
+      if (i + 1 >= rawArgs.length || rawArgs[i + 1].startsWith('-')) {
+        process.stderr.write(`Error: --check requires a check name. Available: ${OPT_IN_CHECKS.join(', ')}\n`);
+        process.exit(2);
+      }
+      const value = rawArgs[++i];
+      consumedIndices.add(i);
+      for (const c of value.split(',')) {
+        const trimmed = c.trim();
+        if (trimmed) checks.push(trimmed);
+      }
+    } else if (arg.startsWith('--check=')) {
+      for (const c of arg.slice('--check='.length).split(',')) {
+        const trimmed = c.trim();
+        if (trimmed) checks.push(trimmed);
+      }
+    }
+  }
   const unknownCheck = checks.find((c) => !OPT_IN_CHECKS.includes(c));
   if (unknownCheck) {
     process.stderr.write(`Error: Unknown check '${unknownCheck}'. Available: ${OPT_IN_CHECKS.join(', ')}\n`);
@@ -201,7 +218,7 @@ async function main() {
   const config = { checks };
 
   // First positional arg is the target
-  const target = rawArgs.find((a) => !a.startsWith('-'));
+  const target = rawArgs.find((a, idx) => !consumedIndices.has(idx) && !a.startsWith('-'));
   if (!target) {
     process.stderr.write('Error: Please provide a target URL or file path.\n');
     printUsage();

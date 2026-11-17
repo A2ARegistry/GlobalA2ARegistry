@@ -9,7 +9,8 @@
   "exports": {
     ".": "./src/index.js",
     "./cf": "./src/schema-only.js",
-    "./validator": "./src/validator.js"
+    "./validator": "./src/validator.js",
+    "./agent-directed-text": "./src/agent-directed-text.js"
   },
   "files": [
     "bin",
