@@ -18,6 +18,7 @@
 const { validateJson: _validateJson, validateUrl: _validateUrl } = require('./validator');
 const { nodeConfig } = require('./node-defaults');
 const { A2A_V1_SCHEMA } = require('./schema');
+const { RULES: AGENT_DIRECTED_TEXT_RULES, checkAgentDirectedText } = require('./agent-directed-text');
 
 // ---------------------------------------------------------------------------
 // Low-level schema exports — for consumers (e.g. a Cloudflare Worker) that
@@ -128,4 +129,8 @@ module.exports = {
   validate_v1_0,
   A2A_SCHEMA_REGISTRY,
   getA2AValidator,
+
+  // Opt-in agent-directed text check, usable on its own
+  checkAgentDirectedText,
+  AGENT_DIRECTED_TEXT_RULES,
 };

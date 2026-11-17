@@ -34,7 +34,7 @@
   "scripts": {
     "build": "node scripts/compile-schema.mjs",
     "prepublishOnly": "node scripts/compile-schema.mjs",
-    "test": "node test/security.test.js && node test/cli.test.js"
+    "test": "node test/security.test.js && node test/agent-directed-text.test.js && node test/cli.test.js"
   },
   "dependencies": {
     "ajv": "^8.17.1",
