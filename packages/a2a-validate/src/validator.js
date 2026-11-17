@@ -32,7 +32,11 @@
 
 const { flattenedVerify, importJWK } = require('jose');
 const { canonicalize } = require('json-canonicalize');
-const { CHECK_NAME: AGENT_DIRECTED_TEXT, checkAgentDirectedText } = require('./agent-directed-text');
+const {
+  CHECK_NAME: AGENT_DIRECTED_TEXT,
+  RULES: AGENT_DIRECTED_TEXT_RULES,
+  checkAgentDirectedText,
+} = require('./agent-directed-text');
 
 // node:dns, node:https, Ajv and ajv-formats are NOT required here.
 // They are provided via config adapters so that edge runtimes (Cloudflare
@@ -90,7 +94,9 @@ const { CHECK_NAME: AGENT_DIRECTED_TEXT, checkAgentDirectedText } = require('./a
  *   Defaults to node:dns/promises resolveTxt (Node.js only).
  * @property {string[]} [checks]
  *   Opt-in checks to run in addition to the default tiers.
- *   Supported: 'agent-directed-text' (Tier 3, warnings only). Unknown names are ignored.
+ *   Supported: 'agent-directed-text' (Tier 3), or 'all'. Unknown names are ignored.
+ * @property {boolean} [checkAll]
+ *   Run all available opt-in checks (takes precedence over checks).
  */
 
 // --------------------------------------------------------------------------
@@ -737,6 +743,7 @@ function buildReport(findings, isValid, specVersion, cardData, meta) {
   let tier1Error = false;
   let tier2Error = false;
   let errors = 0, warnings = 0, passes = 0;
+  let agentDirectedPenalty = 0;
 
   for (const f of findings) {
     if (f.severity === 'error') {
@@ -745,7 +752,14 @@ function buildReport(findings, isValid, specVersion, cardData, meta) {
       else if (f.tier === 'tier2_network') { score -= 15; tier2Error = true; }
     } else if (f.severity === 'warning') {
       warnings++;
-      score -= 5;
+      if (typeof f.code === 'string' && f.code.startsWith('AGENT_DIRECTED_')) {
+        if (agentDirectedPenalty < 15) {
+          score -= 5;
+          agentDirectedPenalty += 5;
+        }
+      } else {
+        score -= 5;
+      }
     } else if (f.severity === 'pass') {
       passes++;
       if (f.tier === 'tier4_trust') score += 5;
@@ -872,7 +886,11 @@ async function validateJson(rawInput, config = {}) {
   runTier3(cardData, findings);
 
   // Tier 3 opt-in: agent-directed text in free-text fields
-  if (Array.isArray(config.checks) && config.checks.includes(AGENT_DIRECTED_TEXT)) {
+  if (
+    config.checkAll === true ||
+    (Array.isArray(config.checks) &&
+      (config.checks.includes(AGENT_DIRECTED_TEXT) || config.checks.includes('all')))
+  ) {
     findings.push(...checkAgentDirectedText(cardData));
   }
 
@@ -957,4 +975,10 @@ async function validateUrl(targetUrl, config = {}) {
   );
 }
 
-module.exports = { validateJson, validateUrl };
+module.exports = {
+  validateJson,
+  validateUrl,
+  checkAgentDirectedText,
+  AGENT_DIRECTED_TEXT_RULES,
+  AGENT_DIRECTED_TEXT,
+};

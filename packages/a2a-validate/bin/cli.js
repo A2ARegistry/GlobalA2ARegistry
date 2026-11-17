@@ -18,6 +18,7 @@
  *   --fail-on=error     Exit 1 only on errors (default)
  *   --check=<name>      Run an opt-in check (repeatable or comma-separated):
  *                         agent-directed-text   warn on text addressed to reading agents
+ *   --check-all         Run all available opt-in checks (takes precedence over --check)
  *   --no-color          Disable ANSI colour output
  *   --help, -h          Show this help message
  *   --version, -v       Print version and exit
@@ -51,6 +52,7 @@ Options:
   --fail-on=error     Exit 1 on errors only          (default)
   --check=<name>      Run an opt-in check (repeatable or comma-separated):
                         agent-directed-text   warn on text addressed to reading agents
+  --check-all         Run all available opt-in checks (takes precedence over --check)
   --no-color          Disable ANSI colour in human-readable output
   --help, -h          Show this help message
   --version, -v       Print version and exit
@@ -61,6 +63,7 @@ Examples:
   a2a-validate a2a://my-agent.godaddy.com --format=json
   a2a-validate ./agent-card.json --fail-on=warning
   a2a-validate ./agent-card.json --check=agent-directed-text
+  a2a-validate ./agent-card.json --check-all
 `);
 }
 
@@ -188,20 +191,49 @@ async function main() {
   const isJsonFormat  = rawArgs.includes('--format=json');
   const failOnWarning = rawArgs.includes('--fail-on=warning');
 
-  const checks = rawArgs
-    .filter((a) => a.startsWith('--check='))
-    .flatMap((a) => a.slice('--check='.length).split(','))
-    .map((c) => c.trim())
-    .filter(Boolean);
-  const unknownCheck = checks.find((c) => !OPT_IN_CHECKS.includes(c));
-  if (unknownCheck) {
-    process.stderr.write(`Error: Unknown check '${unknownCheck}'. Available: ${OPT_IN_CHECKS.join(', ')}\n`);
-    process.exit(2);
+  const isCheckAll = rawArgs.includes('--check-all');
+  const rawChecks = [];
+  const consumedIndices = new Set();
+  for (let i = 0; i < rawArgs.length; i++) {
+    const arg = rawArgs[i];
+    if (arg === '--check') {
+      if (i + 1 >= rawArgs.length || rawArgs[i + 1].startsWith('-')) {
+        if (!isCheckAll) {
+          process.stderr.write(`Error: --check requires a check name. Available: ${OPT_IN_CHECKS.join(', ')}\n`);
+          process.exit(2);
+        }
+        continue;
+      }
+      const value = rawArgs[++i];
+      consumedIndices.add(i);
+      for (const c of value.split(',')) {
+        const trimmed = c.trim();
+        if (trimmed) rawChecks.push(trimmed);
+      }
+    } else if (arg.startsWith('--check=')) {
+      for (const c of arg.slice('--check='.length).split(',')) {
+        const trimmed = c.trim();
+        if (trimmed) rawChecks.push(trimmed);
+      }
+    }
+  }
+
+  let checks;
+  if (isCheckAll) {
+    checks = [...OPT_IN_CHECKS];
+  } else {
+    const expanded = rawChecks.flatMap((c) => (c === 'all' ? OPT_IN_CHECKS : [c]));
+    const unknownCheck = expanded.find((c) => !OPT_IN_CHECKS.includes(c));
+    if (unknownCheck) {
+      process.stderr.write(`Error: Unknown check '${unknownCheck}'. Available: ${OPT_IN_CHECKS.join(', ')}\n`);
+      process.exit(2);
+    }
+    checks = Array.from(new Set(expanded));
   }
   const config = { checks };
 
   // First positional arg is the target
-  const target = rawArgs.find((a) => !a.startsWith('-'));
+  const target = rawArgs.find((a, idx) => !consumedIndices.has(idx) && !a.startsWith('-'));
   if (!target) {
     process.stderr.write('Error: Please provide a target URL or file path.\n');
     printUsage();

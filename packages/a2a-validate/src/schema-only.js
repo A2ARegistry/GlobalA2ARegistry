@@ -11,6 +11,11 @@
  */
 
 const { A2A_V1_SCHEMA } = require('./schema');
+const {
+    CHECK_NAME: AGENT_DIRECTED_TEXT_CHECK_NAME,
+    RULES: AGENT_DIRECTED_TEXT_RULES,
+    checkAgentDirectedText,
+} = require('./agent-directed-text');
 
 // The compiled validator is ESM (export const validate = ...).
 // We load it via a compatibility shim so this CJS file can re-export it.
@@ -56,4 +61,7 @@ module.exports = {
     A2A_SCHEMA_REGISTRY,
     getA2AValidator,
     cfConfig,
+    AGENT_DIRECTED_TEXT_CHECK_NAME,
+    AGENT_DIRECTED_TEXT_RULES,
+    checkAgentDirectedText,
 };
