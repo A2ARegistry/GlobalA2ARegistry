@@ -94,7 +94,9 @@ const {
  *   Defaults to node:dns/promises resolveTxt (Node.js only).
  * @property {string[]} [checks]
  *   Opt-in checks to run in addition to the default tiers.
- *   Supported: 'agent-directed-text' (Tier 3, warnings only). Unknown names are ignored.
+ *   Supported: 'agent-directed-text' (Tier 3), or 'all'. Unknown names are ignored.
+ * @property {boolean} [checkAll]
+ *   Run all available opt-in checks (takes precedence over checks).
  */
 
 // --------------------------------------------------------------------------
@@ -884,7 +886,11 @@ async function validateJson(rawInput, config = {}) {
   runTier3(cardData, findings);
 
   // Tier 3 opt-in: agent-directed text in free-text fields
-  if (Array.isArray(config.checks) && config.checks.includes(AGENT_DIRECTED_TEXT)) {
+  if (
+    config.checkAll === true ||
+    (Array.isArray(config.checks) &&
+      (config.checks.includes(AGENT_DIRECTED_TEXT) || config.checks.includes('all')))
+  ) {
     findings.push(...checkAgentDirectedText(cardData));
   }
 

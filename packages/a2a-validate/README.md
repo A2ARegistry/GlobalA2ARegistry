@@ -44,6 +44,9 @@ a2a-validate https://my-agent.com --fail-on=warning
 
 # Run an opt-in check (see "Opt-in checks" below)
 a2a-validate ./agent-card.json --check=agent-directed-text
+
+# Run all available opt-in checks (takes precedence over --check)
+a2a-validate ./agent-card.json --check-all
 ```
 
 ---
@@ -67,10 +70,14 @@ Agent cards are read by other agents, and their free-text fields end up in those
 
 ```bash
 a2a-validate ./agent-card.json --check=agent-directed-text
+# Or run all available opt-in checks (takes precedence if combined with --check)
+a2a-validate ./agent-card.json --check-all
 ```
 
 ```javascript
 const report = await validateJson(card, { checks: ['agent-directed-text'] });
+// Or enable all opt-in checks (takes precedence over checks)
+const fullReport = await validateJson(card, { checkAll: true });
 
 // Or run the check on its own (also exported from '@a2aregistry/validate/cf' and '@a2aregistry/validate/validator')
 const { checkAgentDirectedText } = require('@a2aregistry/validate');
