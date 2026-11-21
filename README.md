@@ -239,12 +239,12 @@ The A2A Registry is free, open infrastructure for the agentic web. Running and m
       </div>
     </td>
     <td align="center" width="300" style="vertical-align: top;">
-      <a href="mailto:sponsors@a2a-registry.org" style="display: flex; align-items: center; justify-content: center; gap: 12px; text-decoration: none;">
-        <img src="https://www.a2a-registry.org/logo.svg" alt="Become a Sponsor" width="64" height="64" style="opacity: 0.3; object-fit: contain; flex-shrink: 0;">
-        <strong style="color: inherit;">Your Company</strong>
+      <a href="https://www.zervice.us" target="_blank" style="display: flex; align-items: center; justify-content: center; gap: 12px; text-decoration: none;">
+        <img src="https://www.zervice.us/logo.svg" alt="Zervice" width="64" height="64" style="object-fit: contain; flex-shrink: 0;">
+        <strong style="color: inherit;">Zervice</strong>
       </a>
       <div style="margin-top: 8px;">
-        <sub>Support the A2A ecosystem and reach AI developers worldwide.</sub>
+        <sub>Agentic transformation platform. Helps businesses create autonomous services for both human customers and autonomous AI agents.</sub>
       </div>
     </td>
     <td align="center" width="300" style="vertical-align: top;">
